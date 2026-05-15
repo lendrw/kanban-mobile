@@ -4,6 +4,9 @@
     "slug": "kanban",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark"
+    "userInterfaceStyle": "dark",
+    "web": {
+      "bundler": "metro"
+    }
   }
 }
