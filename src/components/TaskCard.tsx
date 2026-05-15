@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import TrashIcon from "../icons/TrashIcon";
 import type { Id, Task } from "../types";
 
 interface TaskCardProps {
@@ -90,7 +91,7 @@ function TaskCard({ task, deleteTask, updateTask, moveTask }: TaskCardProps) {
         onPress={() => deleteTask(task.id)}
         style={styles.deleteButton}
       >
-        <Text style={styles.deleteText}>x</Text>
+        <TrashIcon />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -134,11 +135,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 4,
     backgroundColor: "#161c22",
-  },
-  deleteText: {
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "700",
   },
 });
 

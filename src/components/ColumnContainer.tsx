@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import TrashIcon from "../icons/TrashIcon";
 import type { Column, Id, Task } from "../types";
 import TaskCard from "./TaskCard";
 
@@ -103,7 +104,7 @@ function ColumnContainer({
           onPress={() => deleteColumn(column.id)}
           style={styles.iconButton}
         >
-          <Text style={styles.trashIcon}>x</Text>
+          <TrashIcon color="#9ca3af" />
         </TouchableOpacity>
       </TouchableOpacity>
 
@@ -202,11 +203,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 4,
-  },
-  trashIcon: {
-    color: "#9ca3af",
-    fontSize: 18,
-    fontWeight: "700",
   },
   tasks: {
     flex: 1,
