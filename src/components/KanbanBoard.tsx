@@ -225,7 +225,6 @@ const styles = StyleSheet.create({
   },
   columns: {
     flexDirection: "row",
-    alignItems: "flex-start",
     gap: COLUMN_GAP,
   },
   addColumnButton: {
