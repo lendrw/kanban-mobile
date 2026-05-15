@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -170,44 +169,42 @@ function KanbanBoard() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <Pressable
-        style={styles.dismissArea}
-        onPress={() => setEditingTaskId(null)}
+      <ScrollView
+        horizontal
+        style={styles.boardScroll}
+        directionalLockEnabled
+        contentContainerStyle={styles.board}
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => setEditingTaskId(null)}
+        showsHorizontalScrollIndicator={false}
       >
-        <ScrollView
-          horizontal
-          contentContainerStyle={styles.board}
-          keyboardShouldPersistTaps="handled"
-          showsHorizontalScrollIndicator={false}
-        >
-          <View style={styles.columns}>
-            {columns.map((col) => (
-              <ColumnContainer
-                key={col.id}
-                column={col}
-                deleteColumn={deleteColumn}
-                updateColumn={updateColumn}
-                createTask={createTask}
-                deleteTask={deleteTask}
-                updateTask={updateTask}
-                moveColumn={moveColumn}
-                moveTask={moveTask}
-                editingTaskId={editingTaskId}
-                setEditingTaskId={setEditingTaskId}
-                tasks={tasksByColumn[String(col.id)] ?? []}
-              />
-            ))}
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={createColumn}
-              style={styles.addColumnButton}
-            >
-              <Text style={styles.addIcon}>+</Text>
-              <Text style={styles.addColumnText}>Add Column</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </Pressable>
+        <View style={styles.columns}>
+          {columns.map((col) => (
+            <ColumnContainer
+              key={col.id}
+              column={col}
+              deleteColumn={deleteColumn}
+              updateColumn={updateColumn}
+              createTask={createTask}
+              deleteTask={deleteTask}
+              updateTask={updateTask}
+              moveColumn={moveColumn}
+              moveTask={moveTask}
+              editingTaskId={editingTaskId}
+              setEditingTaskId={setEditingTaskId}
+              tasks={tasksByColumn[String(col.id)] ?? []}
+            />
+          ))}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={createColumn}
+            style={styles.addColumnButton}
+          >
+            <Text style={styles.addIcon}>+</Text>
+            <Text style={styles.addColumnText}>Add Column</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -217,12 +214,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#000000",
   },
-  dismissArea: {
+  boardScroll: {
     flex: 1,
   },
   board: {
     flexGrow: 1,
     alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 40,
   },
   columns: {
