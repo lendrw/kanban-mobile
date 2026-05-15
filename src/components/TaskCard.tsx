@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 import {
   Animated,
   PanResponder,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
 } from "react-native";
 import TrashIcon from "../icons/TrashIcon";
 import type { Id, Task } from "../types";
@@ -16,10 +16,18 @@ interface TaskCardProps {
   deleteTask: (id: Task["id"]) => void;
   updateTask: (id: Task["id"], content: Task["content"]) => void;
   moveTask: (id: Id, deltaX: number, deltaY: number) => void;
+  isEditing: boolean;
+  setEditingTaskId: (id: Id | null) => void;
 }
 
-function TaskCard({ task, deleteTask, updateTask, moveTask }: TaskCardProps) {
-  const [editMode, setEditMode] = useState(false);
+function TaskCard({
+  task,
+  deleteTask,
+  updateTask,
+  moveTask,
+  isEditing,
+  setEditingTaskId,
+}: TaskCardProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [drag] = useState(() => new Animated.ValueXY());
 
@@ -27,7 +35,7 @@ function TaskCard({ task, deleteTask, updateTask, moveTask }: TaskCardProps) {
     () =>
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, gesture) =>
-          !editMode && Math.abs(gesture.dx) + Math.abs(gesture.dy) > 4,
+          !isEditing && Math.abs(gesture.dx) + Math.abs(gesture.dy) > 4,
         onPanResponderGrant: () => {
           setIsDragging(true);
           drag.setOffset({ x: 0, y: 0 });
@@ -49,12 +57,15 @@ function TaskCard({ task, deleteTask, updateTask, moveTask }: TaskCardProps) {
           drag.setValue({ x: 0, y: 0 });
         },
       }),
-    [drag, editMode, moveTask, task.id],
+    [drag, isEditing, moveTask, task.id],
   );
 
-  if (editMode) {
+  if (isEditing) {
     return (
-      <View style={styles.card}>
+      <Pressable
+        style={styles.card}
+        onPress={(event) => event.stopPropagation()}
+      >
         <TextInput
           value={task.content}
           autoFocus
@@ -62,11 +73,11 @@ function TaskCard({ task, deleteTask, updateTask, moveTask }: TaskCardProps) {
           placeholder="Task content here"
           placeholderTextColor="#8b949e"
           onChangeText={(content) => updateTask(task.id, content)}
-          onBlur={() => setEditMode(false)}
+          onBlur={() => setEditingTaskId(null)}
           style={styles.input}
           selectionColor="#f43f5e"
         />
-      </View>
+      </Pressable>
     );
   }
 
@@ -81,14 +92,20 @@ function TaskCard({ task, deleteTask, updateTask, moveTask }: TaskCardProps) {
     >
       <TouchableOpacity
         activeOpacity={0.9}
-        onPress={() => setEditMode(true)}
+        onPress={(event) => {
+          event.stopPropagation();
+          setEditingTaskId(task.id);
+        }}
         style={styles.contentButton}
       >
         <Text style={styles.content}>{task.content}</Text>
       </TouchableOpacity>
       <TouchableOpacity
         activeOpacity={0.7}
-        onPress={() => deleteTask(task.id)}
+        onPress={(event) => {
+          event.stopPropagation();
+          deleteTask(task.id);
+        }}
         style={styles.deleteButton}
       >
         <TrashIcon />

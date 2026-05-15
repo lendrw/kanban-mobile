@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -29,6 +30,7 @@ function arrayMove<T>(items: T[], from: number, to: number) {
 function KanbanBoard() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [editingTaskId, setEditingTaskId] = useState<Id | null>(null);
 
   const tasksByColumn = useMemo(
     () =>
@@ -44,6 +46,8 @@ function KanbanBoard() {
   }
 
   function createColumn() {
+    setEditingTaskId(null);
+
     const columnToAdd: Column = {
       id: generateId(),
       title: `Column ${columns.length + 1}`,
@@ -52,6 +56,8 @@ function KanbanBoard() {
   }
 
   function deleteColumn(id: Id) {
+    setEditingTaskId(null);
+
     const filteredColumns = columns.filter((col) => col.id !== id);
     setColumns(filteredColumns);
 
@@ -71,6 +77,8 @@ function KanbanBoard() {
   }
 
   function createTask(columnId: Id) {
+    setEditingTaskId(null);
+
     const newTask: Task = {
       id: generateId(),
       columnId,
@@ -80,6 +88,10 @@ function KanbanBoard() {
   }
 
   function deleteTask(id: Id) {
+    if (editingTaskId === id) {
+      setEditingTaskId(null);
+    }
+
     const newTasks = tasks.filter((task) => task.id !== id);
     setTasks(newTasks);
   }
@@ -158,36 +170,44 @@ function KanbanBoard() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <ScrollView
-        horizontal
-        contentContainerStyle={styles.board}
-        showsHorizontalScrollIndicator={false}
+      <Pressable
+        style={styles.dismissArea}
+        onPress={() => setEditingTaskId(null)}
       >
-        <View style={styles.columns}>
-          {columns.map((col) => (
-            <ColumnContainer
-              key={col.id}
-              column={col}
-              deleteColumn={deleteColumn}
-              updateColumn={updateColumn}
-              createTask={createTask}
-              deleteTask={deleteTask}
-              updateTask={updateTask}
-              moveColumn={moveColumn}
-              moveTask={moveTask}
-              tasks={tasksByColumn[String(col.id)] ?? []}
-            />
-          ))}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={createColumn}
-            style={styles.addColumnButton}
-          >
-            <Text style={styles.addIcon}>+</Text>
-            <Text style={styles.addColumnText}>Add Column</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+        <ScrollView
+          horizontal
+          contentContainerStyle={styles.board}
+          keyboardShouldPersistTaps="handled"
+          showsHorizontalScrollIndicator={false}
+        >
+          <View style={styles.columns}>
+            {columns.map((col) => (
+              <ColumnContainer
+                key={col.id}
+                column={col}
+                deleteColumn={deleteColumn}
+                updateColumn={updateColumn}
+                createTask={createTask}
+                deleteTask={deleteTask}
+                updateTask={updateTask}
+                moveColumn={moveColumn}
+                moveTask={moveTask}
+                editingTaskId={editingTaskId}
+                setEditingTaskId={setEditingTaskId}
+                tasks={tasksByColumn[String(col.id)] ?? []}
+              />
+            ))}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={createColumn}
+              style={styles.addColumnButton}
+            >
+              <Text style={styles.addIcon}>+</Text>
+              <Text style={styles.addColumnText}>Add Column</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </Pressable>
     </SafeAreaView>
   );
 }
@@ -196,6 +216,9 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: "#000000",
+  },
+  dismissArea: {
+    flex: 1,
   },
   board: {
     flexGrow: 1,

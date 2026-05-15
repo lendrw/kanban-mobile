@@ -22,6 +22,8 @@ interface ColumnContainerProps {
   updateTask: (id: Task["id"], content: Task["content"]) => void;
   moveColumn: (id: Id, deltaX: number) => void;
   moveTask: (id: Id, deltaX: number, deltaY: number) => void;
+  editingTaskId: Id | null;
+  setEditingTaskId: (id: Id | null) => void;
   tasks: Task[];
 }
 
@@ -34,6 +36,8 @@ function ColumnContainer({
   updateTask,
   moveColumn,
   moveTask,
+  editingTaskId,
+  setEditingTaskId,
   tasks,
 }: ColumnContainerProps) {
   const [editMode, setEditMode] = useState(false);
@@ -78,7 +82,10 @@ function ColumnContainer({
     >
       <TouchableOpacity
         activeOpacity={0.9}
-        onPress={() => setEditMode(true)}
+        onPress={() => {
+          setEditingTaskId(null);
+          setEditMode(true);
+        }}
         style={styles.header}
         {...columnPanResponder.panHandlers}
       >
@@ -101,7 +108,10 @@ function ColumnContainer({
         </View>
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => deleteColumn(column.id)}
+          onPress={() => {
+            setEditingTaskId(null);
+            deleteColumn(column.id);
+          }}
           style={styles.iconButton}
         >
           <TrashIcon color="#9ca3af" />
@@ -111,6 +121,7 @@ function ColumnContainer({
       <ScrollView
         style={styles.tasks}
         contentContainerStyle={styles.tasksContent}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {tasks.map((task) => (
@@ -120,6 +131,8 @@ function ColumnContainer({
             deleteTask={deleteTask}
             updateTask={updateTask}
             moveTask={moveTask}
+            isEditing={editingTaskId === task.id}
+            setEditingTaskId={setEditingTaskId}
           />
         ))}
       </ScrollView>
@@ -127,7 +140,10 @@ function ColumnContainer({
       <TouchableOpacity
         activeOpacity={0.8}
         style={styles.footer}
-        onPress={() => createTask(column.id)}
+        onPress={() => {
+          setEditingTaskId(null);
+          createTask(column.id);
+        }}
       >
         <Text style={styles.footerIcon}>+</Text>
         <Text style={styles.footerText}>Add Task</Text>
