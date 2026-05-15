@@ -154,8 +154,7 @@ function ColumnContainer({
 
 const styles = StyleSheet.create({
   column: {
-    width: 350,
-    height: 500,
+    width: 250,
     maxHeight: 500,
     backgroundColor: "#161c22",
     borderRadius: 6,

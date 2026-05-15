@@ -10,7 +10,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { Column, Id, Task } from "../types";
 import ColumnContainer from "./ColumnContainer";
 
-const COLUMN_WIDTH = 350;
+const COLUMN_WIDTH = 250;
 const COLUMN_GAP = 16;
 const TASK_HEIGHT = 100;
 const TASK_GAP = 16;

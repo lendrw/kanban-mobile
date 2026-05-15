@@ -116,8 +116,8 @@ function TaskCard({
 
 const styles = StyleSheet.create({
   card: {
-    minHeight: 100,
-    height: 100,
+    maxHeight: 200,
+    minHeight: 50,
     flexDirection: "row",
     alignItems: "center",
     padding: 10,
@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
   },
   contentButton: {
     flex: 1,
-    minHeight: 80,
+    minHeight: 30,
     justifyContent: "center",
   },
   content: {
@@ -146,8 +146,8 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   deleteButton: {
-    width: 36,
-    height: 36,
+    width: 35,
+    height: 35,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 4,
