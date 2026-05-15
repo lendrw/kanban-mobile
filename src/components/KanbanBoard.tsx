@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -9,11 +9,22 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Column, Id, Task } from "../types";
 import ColumnContainer from "./ColumnContainer";
+import TaskCard from "./TaskCard";
 
 const COLUMN_WIDTH = 250;
 const COLUMN_GAP = 16;
 const TASK_HEIGHT = 100;
 const TASK_GAP = 16;
+
+type TaskDragState = {
+  task: Task;
+  startX: number;
+  startY: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -30,11 +41,16 @@ function KanbanBoard() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [editingTaskId, setEditingTaskId] = useState<Id | null>(null);
+  const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragState | null>(
+    null,
+  );
 
   const tasksByColumn = useMemo(
     () =>
       columns.reduce<Record<string, Task[]>>((acc, column) => {
-        acc[String(column.id)] = tasks.filter((task) => task.columnId === column.id);
+        acc[String(column.id)] = tasks.filter(
+          (task) => task.columnId === column.id,
+        );
         return acc;
       }, {}),
     [columns, tasks],
@@ -106,20 +122,24 @@ function KanbanBoard() {
     setTasks(newTasks);
   }
 
-  function moveColumn(id: Id, deltaX: number) {
+  const moveColumn = useCallback((id: Id, deltaX: number) => {
     setColumns((currentColumns) => {
       const fromIndex = currentColumns.findIndex((column) => column.id === id);
       if (fromIndex === -1) return currentColumns;
 
       const indexOffset = Math.round(deltaX / (COLUMN_WIDTH + COLUMN_GAP));
-      const toIndex = clamp(fromIndex + indexOffset, 0, currentColumns.length - 1);
+      const toIndex = clamp(
+        fromIndex + indexOffset,
+        0,
+        currentColumns.length - 1,
+      );
 
       if (fromIndex === toIndex) return currentColumns;
       return arrayMove(currentColumns, fromIndex, toIndex);
     });
-  }
+  }, []);
 
-  function moveTask(taskId: Id, deltaX: number, deltaY: number) {
+  const moveTask = useCallback((taskId: Id, deltaX: number, deltaY: number) => {
     setTasks((currentTasks) => {
       const task = currentTasks.find((item) => item.id === taskId);
       if (!task) return currentTasks;
@@ -135,8 +155,12 @@ function KanbanBoard() {
         columns.length - 1,
       );
       const targetColumn = columns[targetColumnIndex];
-      const sourceTasks = currentTasks.filter((item) => item.columnId === task.columnId);
-      const sourceTaskIndex = sourceTasks.findIndex((item) => item.id === taskId);
+      const sourceTasks = currentTasks.filter(
+        (item) => item.columnId === task.columnId,
+      );
+      const sourceTaskIndex = sourceTasks.findIndex(
+        (item) => item.id === taskId,
+      );
 
       if (sourceTaskIndex === -1) return currentTasks;
 
@@ -154,7 +178,9 @@ function KanbanBoard() {
       const rebuiltTasks: Task[] = [];
 
       columns.forEach((column) => {
-        const columnTasks = remainingTasks.filter((item) => item.columnId === column.id);
+        const columnTasks = remainingTasks.filter(
+          (item) => item.columnId === column.id,
+        );
 
         if (column.id === targetColumn.id) {
           columnTasks.splice(targetTaskIndex, 0, taskToMove);
@@ -165,7 +191,43 @@ function KanbanBoard() {
 
       return rebuiltTasks;
     });
-  }
+  }, [columns]);
+
+  const handleTaskDragStart = useCallback(
+    (
+      task: Task,
+      layout: { x: number; y: number; width: number; height: number },
+    ) => {
+      setEditingTaskId(null);
+
+      setActiveTaskDrag({
+        task,
+        startX: layout.x,
+        startY: layout.y,
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      });
+    },
+    [],
+  );
+
+  const handleTaskDragMove = useCallback((deltaX: number, deltaY: number) => {
+    setActiveTaskDrag((currentDrag) => {
+      if (!currentDrag) return currentDrag;
+
+      return {
+        ...currentDrag,
+        x: currentDrag.startX + deltaX,
+        y: currentDrag.startY + deltaY,
+      };
+    });
+  }, []);
+
+  const handleTaskDragEnd = useCallback(() => {
+    setActiveTaskDrag(null);
+  }, []);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -190,6 +252,9 @@ function KanbanBoard() {
               updateTask={updateTask}
               moveColumn={moveColumn}
               moveTask={moveTask}
+              onTaskDragStart={handleTaskDragStart}
+              onTaskDragMove={handleTaskDragMove}
+              onTaskDragEnd={handleTaskDragEnd}
               editingTaskId={editingTaskId}
               setEditingTaskId={setEditingTaskId}
               tasks={tasksByColumn[String(col.id)] ?? []}
@@ -205,6 +270,33 @@ function KanbanBoard() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <View pointerEvents="none" style={styles.dragOverlay}>
+        {activeTaskDrag && (
+          <View
+            style={[
+              styles.draggedTask,
+              {
+                width: activeTaskDrag.width,
+                height: activeTaskDrag.height,
+                transform: [
+                  { translateX: activeTaskDrag.x },
+                  { translateY: activeTaskDrag.y },
+                ],
+              },
+            ]}
+          >
+            <TaskCard
+              task={activeTaskDrag.task}
+              deleteTask={deleteTask}
+              updateTask={updateTask}
+              moveTask={moveTask}
+              isEditing={false}
+              isOverlay
+              setEditingTaskId={setEditingTaskId}
+            />
+          </View>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -212,6 +304,7 @@ function KanbanBoard() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    position: "relative",
     backgroundColor: "#000000",
   },
   boardScroll: {
@@ -249,6 +342,20 @@ const styles = StyleSheet.create({
   addColumnText: {
     color: "#ffffff",
     fontSize: 16,
+  },
+  dragOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 99999,
+    elevation: 99999,
+    overflow: "visible",
+  },
+
+  draggedTask: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    zIndex: 99999,
+    elevation: 99999,
   },
 });
 

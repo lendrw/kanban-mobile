@@ -1,15 +1,30 @@
 import { useMemo, useState } from "react";
 import {
   Animated,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
   PanResponder,
+  type PanResponderGestureState,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  View,
 } from "react-native";
 import TrashIcon from "../icons/TrashIcon";
 import type { Id, Task } from "../types";
+
+const DRAG_ACTIVATION_DELAY_MS = 180;
+const DRAG_ACTIVATION_DISTANCE = 8;
+const HORIZONTAL_DRAG_RATIO = 1.15;
+
+type TaskDragLayout = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 interface TaskCardProps {
   task: Task;
@@ -17,6 +32,10 @@ interface TaskCardProps {
   updateTask: (id: Task["id"], content: Task["content"]) => void;
   moveTask: (id: Id, deltaX: number, deltaY: number) => void;
   isEditing: boolean;
+  isOverlay?: boolean;
+  onTaskDragStart?: (task: Task, layout: TaskDragLayout) => void;
+  onTaskDragMove?: (deltaX: number, deltaY: number) => void;
+  onTaskDragEnd?: () => void;
   setEditingTaskId: (id: Id | null) => void;
 }
 
@@ -26,39 +45,142 @@ function TaskCard({
   updateTask,
   moveTask,
   isEditing,
+  isOverlay = false,
+  onTaskDragStart,
+  onTaskDragMove,
+  onTaskDragEnd,
   setEditingTaskId,
 }: TaskCardProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [drag] = useState(() => new Animated.ValueXY());
+  const [cardLayout, setCardLayout] = useState({ width: 250, height: 50 });
 
-  const taskPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          !isEditing && Math.abs(gesture.dx) + Math.abs(gesture.dy) > 4,
-        onPanResponderGrant: () => {
-          setIsDragging(true);
-          drag.setOffset({ x: 0, y: 0 });
-          drag.setValue({ x: 0, y: 0 });
-        },
-        onPanResponderMove: Animated.event(
-          [null, { dx: drag.x, dy: drag.y }],
-          { useNativeDriver: false },
-        ),
-        onPanResponderRelease: (_, gesture) => {
-          setIsDragging(false);
-          drag.flattenOffset();
-          drag.setValue({ x: 0, y: 0 });
-          moveTask(task.id, gesture.dx, gesture.dy);
-        },
-        onPanResponderTerminate: () => {
-          setIsDragging(false);
-          drag.flattenOffset();
-          drag.setValue({ x: 0, y: 0 });
-        },
-      }),
-    [drag, isEditing, moveTask, task.id],
-  );
+  const taskPanResponder = useMemo(() => {
+    let touchStartTimestamp = 0;
+
+    function getEventTimestamp(event: GestureResponderEvent) {
+      return event.nativeEvent.timestamp ?? Date.now();
+    }
+
+    function shouldStartTaskDrag(
+      event: GestureResponderEvent,
+      gesture: PanResponderGestureState,
+    ) {
+      if (isOverlay || isEditing) return false;
+
+      const distance = Math.abs(gesture.dx) + Math.abs(gesture.dy);
+      if (distance < DRAG_ACTIVATION_DISTANCE) return false;
+
+      const elapsed =
+        touchStartTimestamp > 0
+          ? getEventTimestamp(event) - touchStartTimestamp
+          : 0;
+      const isLongPressDrag = elapsed >= DRAG_ACTIVATION_DELAY_MS;
+      const isHorizontalDrag =
+        Math.abs(gesture.dx) > Math.abs(gesture.dy) * HORIZONTAL_DRAG_RATIO;
+
+      return isLongPressDrag || isHorizontalDrag;
+    }
+
+    return PanResponder.create({
+      onStartShouldSetPanResponderCapture: (event) => {
+        touchStartTimestamp = getEventTimestamp(event);
+        return false;
+      },
+
+      onMoveShouldSetPanResponderCapture: shouldStartTaskDrag,
+
+      onMoveShouldSetPanResponder: shouldStartTaskDrag,
+
+      onPanResponderGrant: (event, gesture) => {
+        const width = cardLayout.width || 250;
+        const height = cardLayout.height || 50;
+        const { locationX, locationY } = event.nativeEvent;
+        const pageX = Number.isFinite(event.nativeEvent.pageX)
+          ? event.nativeEvent.pageX
+          : gesture.x0;
+        const pageY = Number.isFinite(event.nativeEvent.pageY)
+          ? event.nativeEvent.pageY
+          : gesture.y0;
+        const touchOffsetX = Number.isFinite(locationX)
+          ? locationX
+          : width / 2;
+        const touchOffsetY = Number.isFinite(locationY)
+          ? locationY
+          : height / 2;
+
+        setIsDragging(true);
+        onTaskDragStart?.(task, {
+          x: pageX - touchOffsetX,
+          y: pageY - touchOffsetY,
+          width,
+          height,
+        });
+      },
+
+      onPanResponderMove: (_, gesture) => {
+        onTaskDragMove?.(gesture.dx, gesture.dy);
+      },
+
+      onPanResponderRelease: (_, gesture) => {
+        setIsDragging(false);
+        touchStartTimestamp = 0;
+
+        onTaskDragEnd?.();
+        moveTask(task.id, gesture.dx, gesture.dy);
+      },
+
+      onPanResponderTerminate: () => {
+        setIsDragging(false);
+        touchStartTimestamp = 0;
+        onTaskDragEnd?.();
+      },
+
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+    });
+  }, [
+    cardLayout.height,
+    cardLayout.width,
+    isEditing,
+    isOverlay,
+    moveTask,
+    onTaskDragEnd,
+    onTaskDragMove,
+    onTaskDragStart,
+    task,
+  ]);
+
+  function handleCardLayout(event: LayoutChangeEvent) {
+    const { width, height } = event.nativeEvent.layout;
+
+    setCardLayout((currentLayout) => {
+      if (
+        currentLayout.width === width &&
+        currentLayout.height === height
+      ) {
+        return currentLayout;
+      }
+
+      return {
+        width,
+        height,
+      };
+    });
+  }
+
+  if (isOverlay) {
+    return (
+      <View style={[styles.card, styles.overlayCard]}>
+        <View style={styles.contentButton}>
+          <Text style={styles.content}>{task.content}</Text>
+        </View>
+
+        <View style={styles.deleteButton}>
+          <TrashIcon />
+        </View>
+      </View>
+    );
+  }
 
   if (isEditing) {
     return (
@@ -73,7 +195,11 @@ function TaskCard({
           placeholder="Task content here"
           placeholderTextColor="#8b949e"
           onChangeText={(content) => updateTask(task.id, content)}
-          onBlur={() => setEditingTaskId(null)}
+          onBlur={() => {
+            if (!isDragging) {
+              setEditingTaskId(null);
+            }
+          }}
           style={styles.input}
           selectionColor="#f43f5e"
         />
@@ -83,11 +209,8 @@ function TaskCard({
 
   return (
     <Animated.View
-      style={[
-        styles.card,
-        isDragging && styles.draggingCard,
-        { transform: [{ translateX: drag.x }, { translateY: drag.y }] },
-      ]}
+      onLayout={handleCardLayout}
+      style={[styles.card, isDragging && styles.draggingCard]}
       {...taskPanResponder.panHandlers}
     >
       <TouchableOpacity
@@ -100,6 +223,7 @@ function TaskCard({
       >
         <Text style={styles.content}>{task.content}</Text>
       </TouchableOpacity>
+
       <TouchableOpacity
         activeOpacity={0.7}
         onPress={(event) => {
@@ -121,14 +245,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 10,
+    borderWidth: 2,
+    borderColor: "transparent",
     borderRadius: 12,
     backgroundColor: "#0d1117",
   },
   draggingCard: {
-    opacity: 0.5,
-    borderWidth: 2,
+    opacity: 0.25,
     borderColor: "#f43f5e",
-    zIndex: 20,
+  },
+  overlayCard: {
+    borderColor: "#f43f5e",
+    shadowColor: "#000000",
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 12,
   },
   contentButton: {
     flex: 1,

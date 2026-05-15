@@ -22,6 +22,12 @@ interface ColumnContainerProps {
   updateTask: (id: Task["id"], content: Task["content"]) => void;
   moveColumn: (id: Id, deltaX: number) => void;
   moveTask: (id: Id, deltaX: number, deltaY: number) => void;
+  onTaskDragStart: (
+    task: Task,
+    layout: { x: number; y: number; width: number; height: number },
+  ) => void;
+  onTaskDragMove: (deltaX: number, deltaY: number) => void;
+  onTaskDragEnd: () => void;
   editingTaskId: Id | null;
   setEditingTaskId: (id: Id | null) => void;
   tasks: Task[];
@@ -36,6 +42,9 @@ function ColumnContainer({
   updateTask,
   moveColumn,
   moveTask,
+  onTaskDragStart,
+  onTaskDragMove,
+  onTaskDragEnd,
   editingTaskId,
   setEditingTaskId,
   tasks,
@@ -131,6 +140,9 @@ function ColumnContainer({
             deleteTask={deleteTask}
             updateTask={updateTask}
             moveTask={moveTask}
+            onTaskDragStart={onTaskDragStart}
+            onTaskDragMove={onTaskDragMove}
+            onTaskDragEnd={onTaskDragEnd}
             isEditing={editingTaskId === task.id}
             setEditingTaskId={setEditingTaskId}
           />
@@ -158,13 +170,26 @@ const styles = StyleSheet.create({
     maxHeight: 500,
     backgroundColor: "#161c22",
     borderRadius: 6,
+    overflow: "hidden",
   },
+
   draggingColumn: {
     opacity: 0.45,
     borderWidth: 2,
     borderColor: "#f43f5e",
     zIndex: 10,
+    elevation: 10,
   },
+
+  tasks: {
+    flex: 1,
+  },
+
+  tasksContent: {
+    gap: 16,
+    padding: 8,
+  },
+
   header: {
     height: 60,
     padding: 12,
@@ -177,12 +202,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+
   titleGroup: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
+
   counter: {
     minWidth: 28,
     height: 28,
@@ -192,16 +219,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     backgroundColor: "#0d1117",
   },
+
   counterText: {
     color: "#ffffff",
     fontSize: 14,
   },
+
   title: {
     flex: 1,
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "700",
   },
+
   titleInput: {
     flex: 1,
     height: 36,
@@ -212,6 +242,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     backgroundColor: "#000000",
   },
+
   iconButton: {
     width: 36,
     height: 36,
@@ -219,13 +250,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 4,
   },
-  tasks: {
-    flex: 1,
-  },
-  tasksContent: {
-    gap: 16,
-    padding: 8,
-  },
+
   footer: {
     minHeight: 56,
     flexDirection: "row",
@@ -236,11 +261,13 @@ const styles = StyleSheet.create({
     borderColor: "#161c22",
     borderRadius: 6,
   },
+
   footerIcon: {
     color: "#ffffff",
     fontSize: 24,
     lineHeight: 24,
   },
+
   footerText: {
     color: "#ffffff",
     fontSize: 16,
