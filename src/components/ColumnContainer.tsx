@@ -1,19 +1,26 @@
-import { SortableContext, useSortable } from "@dnd-kit/sortable";
-import TrashIcon from "../icons/TrashIcon";
-import type { Column, Task } from "../types";
-import { CSS } from "@dnd-kit/utilities";
 import { useMemo, useState } from "react";
-import PlusIcon from "../icons/PlusIcon";
+import {
+  Animated,
+  PanResponder,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import type { Column, Id, Task } from "../types";
 import TaskCard from "./TaskCard";
 
 interface ColumnContainerProps {
   column: Column;
   deleteColumn: (id: Column["id"]) => void;
   updateColumn: (id: Column["id"], title: Column["title"]) => void;
-
   createTask: (columnId: Column["id"]) => void;
   deleteTask: (id: Task["id"]) => void;
   updateTask: (id: Task["id"], content: Task["content"]) => void;
+  moveColumn: (id: Id, deltaX: number) => void;
+  moveTask: (id: Id, deltaX: number, deltaY: number) => void;
   tasks: Task[];
 }
 
@@ -24,173 +31,209 @@ function ColumnContainer({
   createTask,
   deleteTask,
   updateTask,
+  moveColumn,
+  moveTask,
   tasks,
 }: ColumnContainerProps) {
   const [editMode, setEditMode] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [drag] = useState(() => new Animated.ValueXY());
 
-  const tasksIds = useMemo(() => {
-    return tasks.map((task) => task.id);
-  }, [tasks]);
-
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id: column.id,
-    data: {
-      type: "Column",
-      column,
-    },
-    disabled: editMode,
-  });
-
-  const style = {
-    transition,
-    transform: CSS.Transform.toString(transform),
-  };
-
-  if (isDragging) {
-    return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        className="
-  bg-columnBackgroundColor
-  opacity-40
-  border-2
-  border-rose-500
-  w-[350px]
-  h-[500px]
-  max-h-[500px]
-  rounded-md
-  flex
-  flex-col
-  "
-      ></div>
-    );
-  }
+  const columnPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          !editMode && Math.abs(gesture.dx) > 4,
+        onPanResponderGrant: () => {
+          setIsDragging(true);
+          drag.setOffset({ x: 0, y: 0 });
+          drag.setValue({ x: 0, y: 0 });
+        },
+        onPanResponderMove: Animated.event([null, { dx: drag.x }], {
+          useNativeDriver: false,
+        }),
+        onPanResponderRelease: (_, gesture) => {
+          setIsDragging(false);
+          drag.flattenOffset();
+          drag.setValue({ x: 0, y: 0 });
+          moveColumn(column.id, gesture.dx);
+        },
+        onPanResponderTerminate: () => {
+          setIsDragging(false);
+          drag.flattenOffset();
+          drag.setValue({ x: 0, y: 0 });
+        },
+      }),
+    [column.id, drag, editMode, moveColumn],
+  );
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="
-  bg-columnBackgroundColor
-  w-[350px]
-  h-[500px]
-  max-h-[500px]
-  rounded-md
-  flex
-  flex-col
-  "
+    <Animated.View
+      style={[
+        styles.column,
+        isDragging && styles.draggingColumn,
+        { transform: [{ translateX: drag.x }] },
+      ]}
     >
-      {/* Column title */}
-      <div
-        {...attributes}
-        {...listeners}
-        onClick={() => {
-          setEditMode(true);
-        }}
-        className="
-      bg-mainBackgroundColor
-      text-md
-      h-[60px]
-      cursor-grab
-      rounded-md
-      rounded-b-none
-      p-3
-      font-bold
-      border-columnBackgroundColor
-      border-4
-      flex
-      items-center
-      justify-between
-      "
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => setEditMode(true)}
+        style={styles.header}
+        {...columnPanResponder.panHandlers}
       >
-        <div className="flex gap-2">
-          <div
-            className="
-        flex
-        justify-center
-        items-center
-        bg-mainBackgroundColor
-        px-2
-        py-1
-        text-sm
-        rounded-full
-        "
-          >
-            0
-          </div>
-          {!editMode && column.title}
+        <View style={styles.titleGroup}>
+          <View style={styles.counter}>
+            <Text style={styles.counterText}>{tasks.length}</Text>
+          </View>
+          {!editMode && <Text style={styles.title}>{column.title}</Text>}
           {editMode && (
-            <input
-              className="bg-black focus:border-rose-500 border rounded outline-none px-2"
+            <TextInput
               value={column.title}
               autoFocus
-              onChange={(e) => {
-                updateColumn(column.id, e.target.value);
-              }}
+              onChangeText={(title) => updateColumn(column.id, title)}
               onBlur={() => setEditMode(false)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                setEditMode(false);
-              }}
+              onSubmitEditing={() => setEditMode(false)}
+              style={styles.titleInput}
+              selectionColor="#f43f5e"
             />
           )}
-        </div>
-        <button
-          onClick={() => {
-            deleteColumn(column.id);
-          }}
-          className="
-        stroke-gray-500
-        hover:stroke-white
-        hover:bg-columnBackgroundColor
-        rounded
-        px-1
-        py-2
-        "
+        </View>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => deleteColumn(column.id)}
+          style={styles.iconButton}
         >
-          <TrashIcon />
-        </button>
-      </div>
-      {/* Column task container */}
-      <div
-        className="flex flex-grow flex-col gap-4 p-2
-      overflow-x-hidden overflow-y-auto
-      "
+          <Text style={styles.trashIcon}>x</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+
+      <ScrollView
+        style={styles.tasks}
+        contentContainerStyle={styles.tasksContent}
+        showsVerticalScrollIndicator={false}
       >
-        <SortableContext items={tasksIds}>
-          {tasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              deleteTask={deleteTask}
-              updateTask={updateTask}
-            />
-          ))}
-        </SortableContext>
-      </div>
-      {/* Column footer */}
-      <button
-        className="flex gap-2 items-center
-      border-columnBackgroundColor border-2 rounded-md p-4
-      border-x-columnBackgroundColor hover:text-rose-500
-      active:bg-black"
-        onClick={() => {
-          createTask(column.id);
-        }}
+        {tasks.map((task) => (
+          <TaskCard
+            key={task.id}
+            task={task}
+            deleteTask={deleteTask}
+            updateTask={updateTask}
+            moveTask={moveTask}
+          />
+        ))}
+      </ScrollView>
+
+      <TouchableOpacity
+        activeOpacity={0.8}
+        style={styles.footer}
+        onPress={() => createTask(column.id)}
       >
-        <PlusIcon />
-        Add Task
-      </button>
-    </div>
+        <Text style={styles.footerIcon}>+</Text>
+        <Text style={styles.footerText}>Add Task</Text>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
+
+const styles = StyleSheet.create({
+  column: {
+    width: 350,
+    height: 500,
+    maxHeight: 500,
+    backgroundColor: "#161c22",
+    borderRadius: 6,
+  },
+  draggingColumn: {
+    opacity: 0.45,
+    borderWidth: 2,
+    borderColor: "#f43f5e",
+    zIndex: 10,
+  },
+  header: {
+    height: 60,
+    padding: 12,
+    borderWidth: 4,
+    borderColor: "#161c22",
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    backgroundColor: "#0d1117",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  titleGroup: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  counter: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+    backgroundColor: "#0d1117",
+  },
+  counterText: {
+    color: "#ffffff",
+    fontSize: 14,
+  },
+  title: {
+    flex: 1,
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  titleInput: {
+    flex: 1,
+    height: 36,
+    color: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#f43f5e",
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    backgroundColor: "#000000",
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 4,
+  },
+  trashIcon: {
+    color: "#9ca3af",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  tasks: {
+    flex: 1,
+  },
+  tasksContent: {
+    gap: 16,
+    padding: 8,
+  },
+  footer: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: "#161c22",
+    borderRadius: 6,
+  },
+  footerIcon: {
+    color: "#ffffff",
+    fontSize: 24,
+    lineHeight: 24,
+  },
+  footerText: {
+    color: "#ffffff",
+    fontSize: 16,
+  },
+});
 
 export default ColumnContainer;

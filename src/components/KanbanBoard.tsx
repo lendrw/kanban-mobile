@@ -1,33 +1,42 @@
 import { useMemo, useState } from "react";
-import PlusIcon from "../icons/PlusIcon";
+import {
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import type { Column, Id, Task } from "../types";
 import ColumnContainer from "./ColumnContainer";
-import {
-  DndContext,
-  DragOverlay,
-  type DragStartEvent,
-  type DragEndEvent,
-  type DragOverEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import { arrayMove, SortableContext } from "@dnd-kit/sortable";
-import { createPortal } from "react-dom";
-import TaskCard from "./TaskCard";
+
+const COLUMN_WIDTH = 350;
+const COLUMN_GAP = 16;
+const TASK_HEIGHT = 100;
+const TASK_GAP = 16;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function arrayMove<T>(items: T[], from: number, to: number) {
+  const nextItems = [...items];
+  const [item] = nextItems.splice(from, 1);
+  nextItems.splice(to, 0, item);
+  return nextItems;
+}
 
 function KanbanBoard() {
   const [columns, setColumns] = useState<Column[]>([]);
-  const columnsId = useMemo(() => columns.map((col) => col.id), [columns]);
-
   const [tasks, setTasks] = useState<Task[]>([]);
 
-  const [activeColumn, setActiveColumn] = useState<Column | null>(null);
-
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+  const tasksByColumn = useMemo(
+    () =>
+      columns.reduce<Record<string, Task[]>>((acc, column) => {
+        acc[String(column.id)] = tasks.filter((task) => task.columnId === column.id);
+        return acc;
+      }, {}),
+    [columns, tasks],
   );
 
   function generateId() {
@@ -48,96 +57,6 @@ function KanbanBoard() {
 
     const newTasks = tasks.filter((task) => task.columnId !== id);
     setTasks(newTasks);
-  }
-
-  function onDragStart(event: DragStartEvent) {
-    if (event.active.data.current?.type === "Column") {
-      setActiveColumn(event.active.data.current.column);
-      return;
-    }
-
-    if (event.active.data.current?.type === "Task") {
-      setActiveTask(event.active.data.current.task);
-      return;
-    }
-  }
-
-  function onDragEnd(event: DragEndEvent) {
-    setActiveColumn(null);
-    setActiveTask(null);
-
-    const { active, over } = event;
-    if (!over) return;
-    if (active.data.current?.type !== "Column") return;
-
-    const activeColumnId = active.id;
-    const overColumnId = over.id;
-
-    if (activeColumnId === overColumnId) return;
-
-    setColumns((columns) => {
-      const activeColumnIndex = columns.findIndex(
-        (col) => col.id === activeColumnId,
-      );
-      const overColumnIndex = columns.findIndex(
-        (col) => col.id === overColumnId,
-      );
-
-      return arrayMove(columns, activeColumnIndex, overColumnIndex);
-    });
-  }
-
-  function onDragOver(event: DragOverEvent) {
-    const { active, over } = event;
-    if (!over) return;
-
-    const activeId = active.id;
-    const overId = over.id;
-
-    if (activeId === overId) return;
-
-    const isActiveTask = active.data.current?.type === "Task";
-    const isOverATask = over.data.current?.type === "Task";
-    const isOverAColumn = over.data.current?.type === "Column";
-
-    if (!isActiveTask) return;
-
-    if (isOverATask) {
-      setTasks((tasks) => {
-        const activeTaskIndex = tasks.findIndex(
-          (task) => task.id === active.id,
-        );
-        const overTaskIndex = tasks.findIndex((task) => task.id === over.id);
-
-        if (activeTaskIndex === -1 || overTaskIndex === -1) return tasks;
-
-        const updatedTasks = [...tasks];
-        updatedTasks[activeTaskIndex] = {
-          ...updatedTasks[activeTaskIndex],
-          columnId: updatedTasks[overTaskIndex].columnId,
-        };
-
-        return arrayMove(updatedTasks, activeTaskIndex, overTaskIndex);
-      });
-      return;
-    }
-
-    if (isOverAColumn) {
-      setTasks((tasks) => {
-        const activeTaskIndex = tasks.findIndex(
-          (task) => task.id === active.id,
-        );
-
-        if (activeTaskIndex === -1) return tasks;
-
-        const newTasks = [...tasks];
-        newTasks[activeTaskIndex] = {
-          ...newTasks[activeTaskIndex],
-          columnId: over.id,
-        };
-        return newTasks;
-      });
-    }
   }
 
   function updateColumn(id: Id, title: Column["title"]) {
@@ -176,94 +95,139 @@ function KanbanBoard() {
     setTasks(newTasks);
   }
 
+  function moveColumn(id: Id, deltaX: number) {
+    setColumns((currentColumns) => {
+      const fromIndex = currentColumns.findIndex((column) => column.id === id);
+      if (fromIndex === -1) return currentColumns;
+
+      const indexOffset = Math.round(deltaX / (COLUMN_WIDTH + COLUMN_GAP));
+      const toIndex = clamp(fromIndex + indexOffset, 0, currentColumns.length - 1);
+
+      if (fromIndex === toIndex) return currentColumns;
+      return arrayMove(currentColumns, fromIndex, toIndex);
+    });
+  }
+
+  function moveTask(taskId: Id, deltaX: number, deltaY: number) {
+    setTasks((currentTasks) => {
+      const task = currentTasks.find((item) => item.id === taskId);
+      if (!task) return currentTasks;
+
+      const sourceColumnIndex = columns.findIndex(
+        (column) => column.id === task.columnId,
+      );
+      if (sourceColumnIndex === -1) return currentTasks;
+
+      const targetColumnIndex = clamp(
+        sourceColumnIndex + Math.round(deltaX / (COLUMN_WIDTH + COLUMN_GAP)),
+        0,
+        columns.length - 1,
+      );
+      const targetColumn = columns[targetColumnIndex];
+      const sourceTasks = currentTasks.filter((item) => item.columnId === task.columnId);
+      const sourceTaskIndex = sourceTasks.findIndex((item) => item.id === taskId);
+
+      if (sourceTaskIndex === -1) return currentTasks;
+
+      const targetTasksWithoutDragged = currentTasks.filter(
+        (item) => item.columnId === targetColumn.id && item.id !== taskId,
+      );
+      const targetTaskIndex = clamp(
+        sourceTaskIndex + Math.round(deltaY / (TASK_HEIGHT + TASK_GAP)),
+        0,
+        targetTasksWithoutDragged.length,
+      );
+
+      const taskToMove = { ...task, columnId: targetColumn.id };
+      const remainingTasks = currentTasks.filter((item) => item.id !== taskId);
+      const rebuiltTasks: Task[] = [];
+
+      columns.forEach((column) => {
+        const columnTasks = remainingTasks.filter((item) => item.columnId === column.id);
+
+        if (column.id === targetColumn.id) {
+          columnTasks.splice(targetTaskIndex, 0, taskToMove);
+        }
+
+        rebuiltTasks.push(...columnTasks);
+      });
+
+      return rebuiltTasks;
+    });
+  }
+
   return (
-    <div
-      className="
-    m-auto
-    flex
-    min-h-screen
-    w-full
-    items-center
-    overflow-x-auto
-    overflow-y-hidden
-    px-[40px]
-    "
-    >
-      <DndContext
-        sensors={sensors}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-        onDragOver={onDragOver}
+    <SafeAreaView style={styles.screen}>
+      <ScrollView
+        horizontal
+        contentContainerStyle={styles.board}
+        showsHorizontalScrollIndicator={false}
       >
-        <div className="m-auto flex gap-4">
-          <div className="flex gap-4">
-            <SortableContext items={columnsId}>
-              {columns.map((col) => (
-                <ColumnContainer
-                  key={col.id}
-                  column={col}
-                  deleteColumn={deleteColumn}
-                  updateColumn={updateColumn}
-                  createTask={createTask}
-                  deleteTask={deleteTask}
-                  updateTask={updateTask}
-                  tasks={tasks.filter((task) => task.columnId === col.id)}
-                />
-              ))}
-            </SortableContext>
-          </div>
-          <button
-            onClick={() => {
-              createColumn();
-            }}
-            className="
-        h-[60px] 
-        w-[350px]
-        min-w-[350px]
-        cursor-pointer
-        rounded-lg
-        bg-mainBackgroundColor
-        border-2
-        border-columnBackgroundColor
-        p-4
-        ring-rose-500
-        hover:ring-2
-        flex
-        gap-2
-        "
+        <View style={styles.columns}>
+          {columns.map((col) => (
+            <ColumnContainer
+              key={col.id}
+              column={col}
+              deleteColumn={deleteColumn}
+              updateColumn={updateColumn}
+              createTask={createTask}
+              deleteTask={deleteTask}
+              updateTask={updateTask}
+              moveColumn={moveColumn}
+              moveTask={moveTask}
+              tasks={tasksByColumn[String(col.id)] ?? []}
+            />
+          ))}
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={createColumn}
+            style={styles.addColumnButton}
           >
-            <PlusIcon />
-            Add Column
-          </button>
-        </div>
-        {createPortal(
-          <DragOverlay>
-            {activeColumn && (
-              <ColumnContainer
-                column={activeColumn}
-                deleteColumn={deleteColumn}
-                updateColumn={updateColumn}
-                createTask={createTask}
-                deleteTask={deleteTask}
-                updateTask={updateTask}
-                tasks={tasks.filter(
-                  (task) => task.columnId === activeColumn.id,
-                )}
-              />
-            )}
-            {activeTask && (
-              <TaskCard
-                task={activeTask}
-                deleteTask={deleteTask}
-                updateTask={updateTask}
-              />
-            )}
-          </DragOverlay>,
-          document.body,
-        )}
-      </DndContext>
-    </div>
+            <Text style={styles.addIcon}>+</Text>
+            <Text style={styles.addColumnText}>Add Column</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: "#000000",
+  },
+  board: {
+    flexGrow: 1,
+    alignItems: "center",
+    paddingHorizontal: 40,
+  },
+  columns: {
+    flexDirection: "row",
+    gap: COLUMN_GAP,
+  },
+  addColumnButton: {
+    width: COLUMN_WIDTH,
+    minWidth: COLUMN_WIDTH,
+    height: 60,
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: "#161c22",
+    borderRadius: 8,
+    backgroundColor: "#0d1117",
+  },
+  addIcon: {
+    color: "#ffffff",
+    fontSize: 28,
+    lineHeight: 28,
+  },
+  addColumnText: {
+    color: "#ffffff",
+    fontSize: 16,
+  },
+});
 
 export default KanbanBoard;

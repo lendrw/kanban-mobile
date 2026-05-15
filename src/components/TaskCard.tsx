@@ -1,124 +1,145 @@
-import { useState } from "react";
-import TrashIcon from "../icons/TrashIcon";
-import type { Task } from "../types";
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { useMemo, useState } from "react";
+import {
+  Animated,
+  PanResponder,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import type { Id, Task } from "../types";
 
 interface TaskCardProps {
   task: Task;
   deleteTask: (id: Task["id"]) => void;
   updateTask: (id: Task["id"], content: Task["content"]) => void;
+  moveTask: (id: Id, deltaX: number, deltaY: number) => void;
 }
 
-function TaskCard({ task, deleteTask, updateTask }: TaskCardProps) {
-  const [mouseIsover, setMouseIsOver] = useState(false);
+function TaskCard({ task, deleteTask, updateTask, moveTask }: TaskCardProps) {
   const [editMode, setEditMode] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [drag] = useState(() => new Animated.ValueXY());
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id: task.id,
-    data: {
-      type: "Task",
-      task,
-    },
-    disabled: editMode,
-  });
-
-  const style = {
-    transition,
-    transform: CSS.Transform.toString(transform),
-  };
-
-  const toggleEditMode = () => {
-    setEditMode((prev) => !prev);
-    setMouseIsOver(false);
-  };
-
-  if (isDragging) {
-    return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        className="
-        opacity-50
-        bg-mainBackgroundColor p-2.5 h-[100px] min-h-[100px] 
-        items-center flex text-left rounded-xl border-2
-        border-rose-500 cursor-grab relative"
-      ></div>
-    );
-  }
+  const taskPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          !editMode && Math.abs(gesture.dx) + Math.abs(gesture.dy) > 4,
+        onPanResponderGrant: () => {
+          setIsDragging(true);
+          drag.setOffset({ x: 0, y: 0 });
+          drag.setValue({ x: 0, y: 0 });
+        },
+        onPanResponderMove: Animated.event(
+          [null, { dx: drag.x, dy: drag.y }],
+          { useNativeDriver: false },
+        ),
+        onPanResponderRelease: (_, gesture) => {
+          setIsDragging(false);
+          drag.flattenOffset();
+          drag.setValue({ x: 0, y: 0 });
+          moveTask(task.id, gesture.dx, gesture.dy);
+        },
+        onPanResponderTerminate: () => {
+          setIsDragging(false);
+          drag.flattenOffset();
+          drag.setValue({ x: 0, y: 0 });
+        },
+      }),
+    [drag, editMode, moveTask, task.id],
+  );
 
   if (editMode) {
     return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        {...attributes}
-        {...listeners}
-        className="bg-mainBackgroundColor p-2.5 h-[100px]
-    min-h-[100px] items-center flex text-left rounded-xl
-    hover:ring-2 hover:ring-inset hover:ring-rose-500
-    cursor-grab relative"
-      >
-        <textarea
-          className="
-        h-[90%]
-        w-full resize-none border-none rounded bg-transparent
-        text-white focus:outline-none
-        "
+      <View style={styles.card}>
+        <TextInput
           value={task.content}
           autoFocus
+          multiline
           placeholder="Task content here"
-          onBlur={toggleEditMode}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" && e.shiftKey) toggleEditMode();
-          }}
-          onChange={(e) => updateTask(task.id, e.target.value)}
-        ></textarea>
-      </div>
+          placeholderTextColor="#8b949e"
+          onChangeText={(content) => updateTask(task.id, content)}
+          onBlur={() => setEditMode(false)}
+          style={styles.input}
+          selectionColor="#f43f5e"
+        />
+      </View>
     );
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      onClick={toggleEditMode}
-      className="bg-mainBackgroundColor p-2.5 h-[100px]
-    min-h-[100px] items-center flex text-left rounded-xl
-    hover:ring-2 hover:ring-inset hover:ring-rose-500
-    cursor-grab relative task"
-      onMouseEnter={() => setMouseIsOver(true)}
-      onMouseLeave={() => setMouseIsOver(false)}
+    <Animated.View
+      style={[
+        styles.card,
+        isDragging && styles.draggingCard,
+        { transform: [{ translateX: drag.x }, { translateY: drag.y }] },
+      ]}
+      {...taskPanResponder.panHandlers}
     >
-      <p
-        className="my-auto h-[90%] w-full overflow-y-auto
-      overflow-x-hidden whitespace-pre-wrap"
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => setEditMode(true)}
+        style={styles.contentButton}
       >
-        {task.content}
-      </p>
-      {mouseIsover && (
-        <button
-          onClick={() => {
-            deleteTask(task.id);
-          }}
-          className="stroke-white absolute right-4 top-1/2
-      -translate-y-1/2 bg-columnBackgroundColor p-2 rounded
-      opacity-60 hover:opacity-100"
-        >
-          <TrashIcon />
-        </button>
-      )}
-    </div>
+        <Text style={styles.content}>{task.content}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => deleteTask(task.id)}
+        style={styles.deleteButton}
+      >
+        <Text style={styles.deleteText}>x</Text>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
+
+const styles = StyleSheet.create({
+  card: {
+    minHeight: 100,
+    height: 100,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: "#0d1117",
+  },
+  draggingCard: {
+    opacity: 0.5,
+    borderWidth: 2,
+    borderColor: "#f43f5e",
+    zIndex: 20,
+  },
+  contentButton: {
+    flex: 1,
+    minHeight: 80,
+    justifyContent: "center",
+  },
+  content: {
+    color: "#ffffff",
+    fontSize: 15,
+  },
+  input: {
+    flex: 1,
+    minHeight: 80,
+    color: "#ffffff",
+    textAlignVertical: "top",
+  },
+  deleteButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 4,
+    backgroundColor: "#161c22",
+  },
+  deleteText: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+});
 
 export default TaskCard;

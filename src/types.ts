@@ -5,8 +5,8 @@ export type Column = {
   title: string;
 };
 
-export type Task={
+export type Task = {
   id: Id;
   columnId: Column["id"];
   content: string;
-}
+};
