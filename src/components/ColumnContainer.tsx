@@ -182,7 +182,8 @@ const styles = StyleSheet.create({
   },
 
   tasks: {
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 1,
   },
 
   tasksContent: {
