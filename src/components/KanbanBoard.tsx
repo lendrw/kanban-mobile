@@ -44,6 +44,7 @@ function KanbanBoard() {
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragState | null>(
     null,
   );
+  const [isTouchingTask, setIsTouchingTask] = useState(false);
 
   const tasksByColumn = useMemo(
     () =>
@@ -227,6 +228,15 @@ function KanbanBoard() {
 
   const handleTaskDragEnd = useCallback(() => {
     setActiveTaskDrag(null);
+    setIsTouchingTask(false);
+  }, []);
+
+  const handleTaskTouchStart = useCallback(() => {
+    setIsTouchingTask(true);
+  }, []);
+
+  const handleTaskTouchEnd = useCallback(() => {
+    setIsTouchingTask(false);
   }, []);
 
   return (
@@ -234,6 +244,7 @@ function KanbanBoard() {
       <ScrollView
         horizontal
         style={styles.boardScroll}
+        scrollEnabled={!isTouchingTask}
         directionalLockEnabled
         contentContainerStyle={styles.board}
         keyboardShouldPersistTaps="handled"
@@ -255,6 +266,8 @@ function KanbanBoard() {
               onTaskDragStart={handleTaskDragStart}
               onTaskDragMove={handleTaskDragMove}
               onTaskDragEnd={handleTaskDragEnd}
+              onTaskTouchStart={handleTaskTouchStart}
+              onTaskTouchEnd={handleTaskTouchEnd}
               editingTaskId={editingTaskId}
               setEditingTaskId={setEditingTaskId}
               tasks={tasksByColumn[String(col.id)] ?? []}

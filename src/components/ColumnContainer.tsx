@@ -28,6 +28,8 @@ interface ColumnContainerProps {
   ) => void;
   onTaskDragMove: (deltaX: number, deltaY: number) => void;
   onTaskDragEnd: () => void;
+  onTaskTouchStart: () => void;
+  onTaskTouchEnd: () => void;
   editingTaskId: Id | null;
   setEditingTaskId: (id: Id | null) => void;
   tasks: Task[];
@@ -45,6 +47,8 @@ function ColumnContainer({
   onTaskDragStart,
   onTaskDragMove,
   onTaskDragEnd,
+  onTaskTouchStart,
+  onTaskTouchEnd,
   editingTaskId,
   setEditingTaskId,
   tasks,
@@ -143,6 +147,8 @@ function ColumnContainer({
             onTaskDragStart={onTaskDragStart}
             onTaskDragMove={onTaskDragMove}
             onTaskDragEnd={onTaskDragEnd}
+            onTaskTouchStart={onTaskTouchStart}
+            onTaskTouchEnd={onTaskTouchEnd}
             isEditing={editingTaskId === task.id}
             setEditingTaskId={setEditingTaskId}
           />

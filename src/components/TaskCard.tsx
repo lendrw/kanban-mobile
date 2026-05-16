@@ -17,7 +17,6 @@ import type { Id, Task } from "../types";
 
 const DRAG_ACTIVATION_DELAY_MS = 180;
 const DRAG_ACTIVATION_DISTANCE = 8;
-const HORIZONTAL_DRAG_RATIO = 1.15;
 
 type TaskDragLayout = {
   x: number;
@@ -36,6 +35,8 @@ interface TaskCardProps {
   onTaskDragStart?: (task: Task, layout: TaskDragLayout) => void;
   onTaskDragMove?: (deltaX: number, deltaY: number) => void;
   onTaskDragEnd?: () => void;
+  onTaskTouchStart?: () => void;
+  onTaskTouchEnd?: () => void;
   setEditingTaskId: (id: Id | null) => void;
 }
 
@@ -49,6 +50,8 @@ function TaskCard({
   onTaskDragStart,
   onTaskDragMove,
   onTaskDragEnd,
+  onTaskTouchStart,
+  onTaskTouchEnd,
   setEditingTaskId,
 }: TaskCardProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -63,12 +66,7 @@ function TaskCard({
       if (isOverlay || isEditing) return false;
 
       const distance = Math.abs(gesture.dx) + Math.abs(gesture.dy);
-      if (distance < DRAG_ACTIVATION_DISTANCE) return false;
-
-      const isHorizontalDrag =
-        Math.abs(gesture.dx) > Math.abs(gesture.dy) * HORIZONTAL_DRAG_RATIO;
-
-      return isHorizontalDrag || isDragReady;
+      return distance >= DRAG_ACTIVATION_DISTANCE;
     }
 
     return PanResponder.create({
@@ -111,6 +109,7 @@ function TaskCard({
         setIsDragReady(false);
 
         onTaskDragEnd?.();
+        onTaskTouchEnd?.();
         moveTask(task.id, gesture.dx, gesture.dy);
       },
 
@@ -118,6 +117,7 @@ function TaskCard({
         setIsDragging(false);
         setIsDragReady(false);
         onTaskDragEnd?.();
+        onTaskTouchEnd?.();
       },
 
       onPanResponderTerminationRequest: () => false,
@@ -126,13 +126,13 @@ function TaskCard({
   }, [
     cardLayout.height,
     cardLayout.width,
-    isDragReady,
     isEditing,
     isOverlay,
     moveTask,
     onTaskDragEnd,
     onTaskDragMove,
     onTaskDragStart,
+    onTaskTouchEnd,
     task,
   ]);
 
@@ -196,6 +196,9 @@ function TaskCard({
   return (
     <Animated.View
       onLayout={handleCardLayout}
+      onTouchCancel={onTaskTouchEnd}
+      onTouchEnd={onTaskTouchEnd}
+      onTouchStart={onTaskTouchStart}
       style={[styles.card, isDragging && styles.draggingCard]}
       {...taskPanResponder.panHandlers}
     >
