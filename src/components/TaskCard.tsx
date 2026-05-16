@@ -52,17 +52,12 @@ function TaskCard({
   setEditingTaskId,
 }: TaskCardProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [isDragReady, setIsDragReady] = useState(false);
   const [cardLayout, setCardLayout] = useState({ width: 250, height: 50 });
 
   const taskPanResponder = useMemo(() => {
-    let touchStartTimestamp = 0;
-
-    function getEventTimestamp(event: GestureResponderEvent) {
-      return event.nativeEvent.timestamp ?? Date.now();
-    }
-
     function shouldStartTaskDrag(
-      event: GestureResponderEvent,
+      _event: GestureResponderEvent,
       gesture: PanResponderGestureState,
     ) {
       if (isOverlay || isEditing) return false;
@@ -70,23 +65,13 @@ function TaskCard({
       const distance = Math.abs(gesture.dx) + Math.abs(gesture.dy);
       if (distance < DRAG_ACTIVATION_DISTANCE) return false;
 
-      const elapsed =
-        touchStartTimestamp > 0
-          ? getEventTimestamp(event) - touchStartTimestamp
-          : 0;
-      const isLongPressDrag = elapsed >= DRAG_ACTIVATION_DELAY_MS;
       const isHorizontalDrag =
         Math.abs(gesture.dx) > Math.abs(gesture.dy) * HORIZONTAL_DRAG_RATIO;
 
-      return isLongPressDrag || isHorizontalDrag;
+      return isHorizontalDrag || isDragReady;
     }
 
     return PanResponder.create({
-      onStartShouldSetPanResponderCapture: (event) => {
-        touchStartTimestamp = getEventTimestamp(event);
-        return false;
-      },
-
       onMoveShouldSetPanResponderCapture: shouldStartTaskDrag,
 
       onMoveShouldSetPanResponder: shouldStartTaskDrag,
@@ -123,7 +108,7 @@ function TaskCard({
 
       onPanResponderRelease: (_, gesture) => {
         setIsDragging(false);
-        touchStartTimestamp = 0;
+        setIsDragReady(false);
 
         onTaskDragEnd?.();
         moveTask(task.id, gesture.dx, gesture.dy);
@@ -131,7 +116,7 @@ function TaskCard({
 
       onPanResponderTerminate: () => {
         setIsDragging(false);
-        touchStartTimestamp = 0;
+        setIsDragReady(false);
         onTaskDragEnd?.();
       },
 
@@ -141,6 +126,7 @@ function TaskCard({
   }, [
     cardLayout.height,
     cardLayout.width,
+    isDragReady,
     isEditing,
     isOverlay,
     moveTask,
@@ -215,9 +201,18 @@ function TaskCard({
     >
       <TouchableOpacity
         activeOpacity={0.9}
+        delayLongPress={DRAG_ACTIVATION_DELAY_MS}
+        onLongPress={() => setIsDragReady(true)}
         onPress={(event) => {
+          if (isDragReady || isDragging) return;
+
           event.stopPropagation();
           setEditingTaskId(task.id);
+        }}
+        onPressOut={() => {
+          if (!isDragging) {
+            setIsDragReady(false);
+          }
         }}
         style={styles.contentButton}
       >
