@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Animated,
   type GestureResponderEvent,
@@ -17,10 +17,12 @@ import type { Id, Task } from "../types";
 
 const DRAG_ACTIVATION_DELAY_MS = 180;
 const DRAG_ACTIVATION_DISTANCE = 8;
+const CARD_PADDING = 10;
 
 class TaskGestureState {
   private ready = false;
   private dragging = false;
+  private responderActive = false;
   private suppressPress = false;
 
   isReady() {
@@ -29,6 +31,10 @@ class TaskGestureState {
 
   isDragging() {
     return this.dragging;
+  }
+
+  isResponderActive() {
+    return this.responderActive;
   }
 
   setReady(ready: boolean) {
@@ -42,9 +48,14 @@ class TaskGestureState {
     this.dragging = dragging;
   }
 
+  setResponderActive(responderActive: boolean) {
+    this.responderActive = responderActive;
+  }
+
   reset() {
     this.ready = false;
     this.dragging = false;
+    this.responderActive = false;
   }
 
   beginTouch() {
@@ -107,12 +118,103 @@ function TaskCard({
   const [taskGestureState] = useState(() => new TaskGestureState());
   const [cardLayout, setCardLayout] = useState({ width: 250, height: 50 });
 
+  const getTaskDragLayout = useCallback((
+    event: GestureResponderEvent,
+    gesture?: PanResponderGestureState,
+    localOffset = { x: 0, y: 0 },
+  ) => {
+    const width = cardLayout.width || 250;
+    const height = cardLayout.height || 50;
+    const { locationX, locationY } = event.nativeEvent;
+    const pageX = Number.isFinite(event.nativeEvent.pageX)
+      ? event.nativeEvent.pageX
+      : gesture?.x0 ?? width / 2;
+    const pageY = Number.isFinite(event.nativeEvent.pageY)
+      ? event.nativeEvent.pageY
+      : gesture?.y0 ?? height / 2;
+    const touchOffsetX = Number.isFinite(locationX)
+      ? locationX + localOffset.x
+      : width / 2;
+    const touchOffsetY = Number.isFinite(locationY)
+      ? locationY + localOffset.y
+      : height / 2;
+
+    return {
+      x: pageX - touchOffsetX,
+      y: pageY - touchOffsetY,
+      width,
+      height,
+    };
+  }, [cardLayout.height, cardLayout.width]);
+
+  const startTaskDrag = useCallback((
+    event: GestureResponderEvent,
+    gesture?: PanResponderGestureState,
+    localOffset = { x: 0, y: 0 },
+  ) => {
+    if (isOverlay || isEditing || taskGestureState.isDragging()) {
+      return;
+    }
+
+    taskGestureState.setReady(true);
+    taskGestureState.setDragging(true);
+    setIsDragging(true);
+    onTaskTouchStart?.();
+    onTaskDragStart?.(
+      task,
+      getTaskDragLayout(event, gesture, localOffset),
+    );
+  }, [
+    getTaskDragLayout,
+    isEditing,
+    isOverlay,
+    onTaskDragStart,
+    onTaskTouchStart,
+    task,
+    taskGestureState,
+  ]);
+
+  const finishTaskDrag = useCallback((
+    deltaX = 0,
+    deltaY = 0,
+    shouldMoveTask = false,
+  ) => {
+    const wasDragging = taskGestureState.isDragging();
+
+    taskGestureState.reset();
+    setIsDragging(false);
+
+    if (wasDragging) {
+      onTaskDragEnd?.();
+
+      if (shouldMoveTask) {
+        moveTask(task.id, deltaX, deltaY);
+      }
+    }
+
+    onTaskTouchEnd?.();
+  }, [
+    moveTask,
+    onTaskDragEnd,
+    onTaskTouchEnd,
+    task.id,
+    taskGestureState,
+  ]);
+
   const taskPanResponder = useMemo(() => {
     function shouldStartTaskDrag(
       _event: GestureResponderEvent,
       gesture: PanResponderGestureState,
     ) {
-      if (isOverlay || isEditing || !taskGestureState.isReady()) {
+      if (isOverlay || isEditing) {
+        return false;
+      }
+
+      if (taskGestureState.isDragging()) {
+        return true;
+      }
+
+      if (!taskGestureState.isReady()) {
         return false;
       }
 
@@ -126,30 +228,8 @@ function TaskCard({
       onMoveShouldSetPanResponder: shouldStartTaskDrag,
 
       onPanResponderGrant: (event, gesture) => {
-        const width = cardLayout.width || 250;
-        const height = cardLayout.height || 50;
-        const { locationX, locationY } = event.nativeEvent;
-        const pageX = Number.isFinite(event.nativeEvent.pageX)
-          ? event.nativeEvent.pageX
-          : gesture.x0;
-        const pageY = Number.isFinite(event.nativeEvent.pageY)
-          ? event.nativeEvent.pageY
-          : gesture.y0;
-        const touchOffsetX = Number.isFinite(locationX)
-          ? locationX
-          : width / 2;
-        const touchOffsetY = Number.isFinite(locationY)
-          ? locationY
-          : height / 2;
-
-        taskGestureState.setDragging(true);
-        setIsDragging(true);
-        onTaskDragStart?.(task, {
-          x: pageX - touchOffsetX,
-          y: pageY - touchOffsetY,
-          width,
-          height,
-        });
+        taskGestureState.setResponderActive(true);
+        startTaskDrag(event, gesture);
       },
 
       onPanResponderMove: (event, gesture) => {
@@ -164,43 +244,36 @@ function TaskCard({
       },
 
       onPanResponderRelease: (_, gesture) => {
-        taskGestureState.reset();
-        setIsDragging(false);
-
-        onTaskDragEnd?.();
-        onTaskTouchEnd?.();
-        moveTask(task.id, gesture.dx, gesture.dy);
+        finishTaskDrag(gesture.dx, gesture.dy, true);
       },
 
       onPanResponderTerminate: () => {
-        taskGestureState.reset();
-        setIsDragging(false);
-        onTaskDragEnd?.();
-        onTaskTouchEnd?.();
+        finishTaskDrag();
       },
 
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
     });
   }, [
-    cardLayout.height,
-    cardLayout.width,
+    finishTaskDrag,
     isEditing,
     isOverlay,
-    moveTask,
-    onTaskDragEnd,
     onTaskDragMove,
-    onTaskDragStart,
-    onTaskTouchEnd,
-    task,
+    startTaskDrag,
     taskGestureState,
   ]);
 
-  function resetReadyGesture() {
-    if (!taskGestureState.isDragging()) {
-      taskGestureState.reset();
-      onTaskTouchEnd?.();
+  function handleTouchFinish() {
+    if (taskGestureState.isDragging()) {
+      if (!taskGestureState.isResponderActive()) {
+        finishTaskDrag();
+      }
+
+      return;
     }
+
+    taskGestureState.reset();
+    onTaskTouchEnd?.();
   }
 
   function handleCardLayout(event: LayoutChangeEvent) {
@@ -263,8 +336,8 @@ function TaskCard({
   return (
     <Animated.View
       onLayout={handleCardLayout}
-      onTouchCancel={resetReadyGesture}
-      onTouchEnd={resetReadyGesture}
+      onTouchCancel={handleTouchFinish}
+      onTouchEnd={handleTouchFinish}
       onTouchStart={() => taskGestureState.beginTouch()}
       pointerEvents={
         isDragPreviewSource && !isDragging ? "none" : "auto"
@@ -279,9 +352,11 @@ function TaskCard({
       <TouchableOpacity
         activeOpacity={0.9}
         delayLongPress={DRAG_ACTIVATION_DELAY_MS}
-        onLongPress={() => {
-          taskGestureState.setReady(true);
-          onTaskTouchStart?.();
+        onLongPress={(event) => {
+          startTaskDrag(event, undefined, {
+            x: CARD_PADDING,
+            y: CARD_PADDING,
+          });
         }}
         onPress={(event) => {
           if (taskGestureState.shouldSuppressPress()) {
@@ -318,7 +393,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
     flexDirection: "row",
     alignItems: "center",
-    padding: 10,
+    padding: CARD_PADDING,
     borderWidth: 2,
     borderColor: "transparent",
     borderRadius: 12,
