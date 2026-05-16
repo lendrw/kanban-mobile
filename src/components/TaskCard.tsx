@@ -253,12 +253,13 @@ const styles = StyleSheet.create({
     borderColor: "#f43f5e",
   },
   overlayCard: {
-    borderColor: "#f43f5e",
+    borderColor: "#30363d",
+    backgroundColor: "#111820",
     shadowColor: "#000000",
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 18,
   },
   contentButton: {
     flex: 1,

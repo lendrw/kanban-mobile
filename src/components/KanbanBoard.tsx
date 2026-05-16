@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
+  Animated,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,10 +19,6 @@ const TASK_GAP = 16;
 
 type TaskDragState = {
   task: Task;
-  startX: number;
-  startY: number;
-  x: number;
-  y: number;
   width: number;
   height: number;
 };
@@ -45,6 +42,11 @@ function KanbanBoard() {
     null,
   );
   const [isTouchingTask, setIsTouchingTask] = useState(false);
+  const taskDragOrigin = useRef({ x: 0, y: 0 });
+  const [taskOverlayPosition] = useState(() => new Animated.ValueXY());
+  const [taskOverlayOpacity] = useState(() => new Animated.Value(0));
+  const [taskOverlayScale] = useState(() => new Animated.Value(1));
+  const [taskOverlayTilt] = useState(() => new Animated.Value(0));
 
   const tasksByColumn = useMemo(
     () =>
@@ -200,36 +202,79 @@ function KanbanBoard() {
       layout: { x: number; y: number; width: number; height: number },
     ) => {
       setEditingTaskId(null);
+      taskDragOrigin.current = { x: layout.x, y: layout.y };
+      taskOverlayPosition.stopAnimation();
+      taskOverlayOpacity.stopAnimation();
+      taskOverlayScale.stopAnimation();
+      taskOverlayTilt.stopAnimation();
+      taskOverlayPosition.setValue({ x: layout.x, y: layout.y });
+      taskOverlayOpacity.setValue(0.35);
+      taskOverlayScale.setValue(0.98);
+      taskOverlayTilt.setValue(0);
 
       setActiveTaskDrag({
         task,
-        startX: layout.x,
-        startY: layout.y,
-        x: layout.x,
-        y: layout.y,
         width: layout.width,
         height: layout.height,
       });
+
+      Animated.parallel([
+        Animated.timing(taskOverlayOpacity, {
+          toValue: 1,
+          duration: 90,
+          useNativeDriver: true,
+        }),
+        Animated.spring(taskOverlayScale, {
+          toValue: 1.04,
+          tension: 260,
+          friction: 18,
+          useNativeDriver: true,
+        }),
+      ]).start();
     },
-    [],
+    [
+      taskOverlayOpacity,
+      taskOverlayPosition,
+      taskOverlayScale,
+      taskOverlayTilt,
+    ],
   );
 
   const handleTaskDragMove = useCallback((deltaX: number, deltaY: number) => {
-    setActiveTaskDrag((currentDrag) => {
-      if (!currentDrag) return currentDrag;
-
-      return {
-        ...currentDrag,
-        x: currentDrag.startX + deltaX,
-        y: currentDrag.startY + deltaY,
-      };
+    taskOverlayPosition.setValue({
+      x: taskDragOrigin.current.x + deltaX,
+      y: taskDragOrigin.current.y + deltaY,
     });
-  }, []);
+    taskOverlayTilt.setValue(deltaX);
+  }, [taskOverlayPosition, taskOverlayTilt]);
 
   const handleTaskDragEnd = useCallback(() => {
-    setActiveTaskDrag(null);
     setIsTouchingTask(false);
-  }, []);
+
+    Animated.parallel([
+      Animated.timing(taskOverlayOpacity, {
+        toValue: 0,
+        duration: 110,
+        useNativeDriver: true,
+      }),
+      Animated.spring(taskOverlayScale, {
+        toValue: 0.98,
+        tension: 220,
+        friction: 18,
+        useNativeDriver: true,
+      }),
+      Animated.spring(taskOverlayTilt, {
+        toValue: 0,
+        tension: 220,
+        friction: 18,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setActiveTaskDrag(null);
+      }
+    });
+  }, [taskOverlayOpacity, taskOverlayScale, taskOverlayTilt]);
 
   const handleTaskTouchStart = useCallback(() => {
     setIsTouchingTask(true);
@@ -285,15 +330,23 @@ function KanbanBoard() {
       </ScrollView>
       <View pointerEvents="none" style={styles.dragOverlay}>
         {activeTaskDrag && (
-          <View
+          <Animated.View
             style={[
               styles.draggedTask,
               {
                 width: activeTaskDrag.width,
                 height: activeTaskDrag.height,
+                opacity: taskOverlayOpacity,
                 transform: [
-                  { translateX: activeTaskDrag.x },
-                  { translateY: activeTaskDrag.y },
+                  ...taskOverlayPosition.getTranslateTransform(),
+                  {
+                    rotateZ: taskOverlayTilt.interpolate({
+                      inputRange: [-160, 0, 160],
+                      outputRange: ["-3deg", "0deg", "3deg"],
+                      extrapolate: "clamp",
+                    }),
+                  },
+                  { scale: taskOverlayScale },
                 ],
               },
             ]}
@@ -307,7 +360,7 @@ function KanbanBoard() {
               isOverlay
               setEditingTaskId={setEditingTaskId}
             />
-          </View>
+          </Animated.View>
         )}
       </View>
     </SafeAreaView>
