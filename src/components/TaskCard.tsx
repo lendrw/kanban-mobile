@@ -18,6 +18,48 @@ import type { Id, Task } from "../types";
 const DRAG_ACTIVATION_DELAY_MS = 180;
 const DRAG_ACTIVATION_DISTANCE = 8;
 
+class TaskGestureState {
+  private ready = false;
+  private dragging = false;
+  private suppressPress = false;
+
+  isReady() {
+    return this.ready;
+  }
+
+  isDragging() {
+    return this.dragging;
+  }
+
+  setReady(ready: boolean) {
+    this.ready = ready;
+    if (ready) {
+      this.suppressPress = true;
+    }
+  }
+
+  setDragging(dragging: boolean) {
+    this.dragging = dragging;
+  }
+
+  reset() {
+    this.ready = false;
+    this.dragging = false;
+  }
+
+  beginTouch() {
+    this.suppressPress = false;
+  }
+
+  shouldSuppressPress() {
+    return this.ready || this.dragging || this.suppressPress;
+  }
+
+  clearPressSuppression() {
+    this.suppressPress = false;
+  }
+}
+
 type TaskDragLayout = {
   x: number;
   y: number;
@@ -32,8 +74,14 @@ interface TaskCardProps {
   moveTask: (id: Id, deltaX: number, deltaY: number) => void;
   isEditing: boolean;
   isOverlay?: boolean;
+  isDragPreviewSource?: boolean;
   onTaskDragStart?: (task: Task, layout: TaskDragLayout) => void;
-  onTaskDragMove?: (deltaX: number, deltaY: number) => void;
+  onTaskDragMove?: (
+    deltaX: number,
+    deltaY: number,
+    pointerX: number,
+    pointerY: number,
+  ) => void;
   onTaskDragEnd?: () => void;
   onTaskTouchStart?: () => void;
   onTaskTouchEnd?: () => void;
@@ -47,6 +95,7 @@ function TaskCard({
   moveTask,
   isEditing,
   isOverlay = false,
+  isDragPreviewSource = false,
   onTaskDragStart,
   onTaskDragMove,
   onTaskDragEnd,
@@ -55,7 +104,7 @@ function TaskCard({
   setEditingTaskId,
 }: TaskCardProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [isDragReady, setIsDragReady] = useState(false);
+  const [taskGestureState] = useState(() => new TaskGestureState());
   const [cardLayout, setCardLayout] = useState({ width: 250, height: 50 });
 
   const taskPanResponder = useMemo(() => {
@@ -63,7 +112,9 @@ function TaskCard({
       _event: GestureResponderEvent,
       gesture: PanResponderGestureState,
     ) {
-      if (isOverlay || isEditing) return false;
+      if (isOverlay || isEditing || !taskGestureState.isReady()) {
+        return false;
+      }
 
       const distance = Math.abs(gesture.dx) + Math.abs(gesture.dy);
       return distance >= DRAG_ACTIVATION_DISTANCE;
@@ -91,6 +142,7 @@ function TaskCard({
           ? locationY
           : height / 2;
 
+        taskGestureState.setDragging(true);
         setIsDragging(true);
         onTaskDragStart?.(task, {
           x: pageX - touchOffsetX,
@@ -100,13 +152,20 @@ function TaskCard({
         });
       },
 
-      onPanResponderMove: (_, gesture) => {
-        onTaskDragMove?.(gesture.dx, gesture.dy);
+      onPanResponderMove: (event, gesture) => {
+        const pointerX = Number.isFinite(gesture.moveX)
+          ? gesture.moveX
+          : event.nativeEvent.pageX;
+        const pointerY = Number.isFinite(gesture.moveY)
+          ? gesture.moveY
+          : event.nativeEvent.pageY;
+
+        onTaskDragMove?.(gesture.dx, gesture.dy, pointerX, pointerY);
       },
 
       onPanResponderRelease: (_, gesture) => {
+        taskGestureState.reset();
         setIsDragging(false);
-        setIsDragReady(false);
 
         onTaskDragEnd?.();
         onTaskTouchEnd?.();
@@ -114,8 +173,8 @@ function TaskCard({
       },
 
       onPanResponderTerminate: () => {
+        taskGestureState.reset();
         setIsDragging(false);
-        setIsDragReady(false);
         onTaskDragEnd?.();
         onTaskTouchEnd?.();
       },
@@ -134,7 +193,15 @@ function TaskCard({
     onTaskDragStart,
     onTaskTouchEnd,
     task,
+    taskGestureState,
   ]);
+
+  function resetReadyGesture() {
+    if (!taskGestureState.isDragging()) {
+      taskGestureState.reset();
+      onTaskTouchEnd?.();
+    }
+  }
 
   function handleCardLayout(event: LayoutChangeEvent) {
     const { width, height } = event.nativeEvent.layout;
@@ -196,26 +263,35 @@ function TaskCard({
   return (
     <Animated.View
       onLayout={handleCardLayout}
-      onTouchCancel={onTaskTouchEnd}
-      onTouchEnd={onTaskTouchEnd}
-      onTouchStart={onTaskTouchStart}
-      style={[styles.card, isDragging && styles.draggingCard]}
+      onTouchCancel={resetReadyGesture}
+      onTouchEnd={resetReadyGesture}
+      onTouchStart={() => taskGestureState.beginTouch()}
+      pointerEvents={
+        isDragPreviewSource && !isDragging ? "none" : "auto"
+      }
+      style={[
+        styles.card,
+        isDragging && styles.draggingCard,
+        isDragPreviewSource && styles.dragPreviewSourceCard,
+      ]}
       {...taskPanResponder.panHandlers}
     >
       <TouchableOpacity
         activeOpacity={0.9}
         delayLongPress={DRAG_ACTIVATION_DELAY_MS}
-        onLongPress={() => setIsDragReady(true)}
+        onLongPress={() => {
+          taskGestureState.setReady(true);
+          onTaskTouchStart?.();
+        }}
         onPress={(event) => {
-          if (isDragReady || isDragging) return;
+          if (taskGestureState.shouldSuppressPress()) {
+            event.stopPropagation();
+            taskGestureState.clearPressSuppression();
+            return;
+          }
 
           event.stopPropagation();
           setEditingTaskId(task.id);
-        }}
-        onPressOut={() => {
-          if (!isDragging) {
-            setIsDragReady(false);
-          }
         }}
         style={styles.contentButton}
       >
@@ -251,6 +327,12 @@ const styles = StyleSheet.create({
   draggingCard: {
     opacity: 0.25,
     borderColor: "#f43f5e",
+  },
+  dragPreviewSourceCard: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    opacity: 0,
   },
   overlayCard: {
     borderColor: "#30363d",

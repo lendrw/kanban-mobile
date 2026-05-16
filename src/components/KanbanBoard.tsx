@@ -1,10 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  LayoutAnimation,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  UIManager,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,12 +19,112 @@ const COLUMN_WIDTH = 250;
 const COLUMN_GAP = 16;
 const TASK_HEIGHT = 100;
 const TASK_GAP = 16;
+const AUTO_SCROLL_EDGE_SIZE = 56;
+const AUTO_SCROLL_STEP = 20;
 
 type TaskDragState = {
   task: Task;
   width: number;
   height: number;
 };
+
+type TaskDragPreview = {
+  taskId: Id;
+  targetColumnId: Id;
+  targetIndex: number;
+  placeholderHeight: number;
+};
+
+type ColumnLayout = {
+  x: number;
+  width: number;
+};
+
+if (Platform.OS === "android") {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
+
+class BoardDragMetrics {
+  private boardScrollX = 0;
+  private boardViewportX = 0;
+  private boardViewportWidth = 0;
+  private columnsContainerX = 0;
+  private columnLayouts = new Map<string, ColumnLayout>();
+
+  setBoardScrollX(scrollX: number) {
+    this.boardScrollX = scrollX;
+  }
+
+  setBoardViewportLayout(x: number, width: number) {
+    this.boardViewportX = x;
+    this.boardViewportWidth = width;
+  }
+
+  getBoardScrollX() {
+    return this.boardScrollX;
+  }
+
+  setColumnsContainerX(x: number) {
+    this.columnsContainerX = x;
+  }
+
+  setColumnLayout(id: Id, layout: ColumnLayout) {
+    this.columnLayouts.set(String(id), layout);
+  }
+
+  getTargetColumnId(columns: Column[], pointerX: number) {
+    if (columns.length === 0) return null;
+
+    const columnsLocalX =
+      pointerX +
+      this.boardScrollX -
+      this.boardViewportX -
+      this.columnsContainerX;
+
+    let nearestColumnId: Id | null = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    for (const column of columns) {
+      const layout = this.columnLayouts.get(String(column.id));
+      if (!layout) continue;
+
+      const columnStart = layout.x;
+      const columnEnd = layout.x + layout.width;
+
+      if (columnsLocalX >= columnStart && columnsLocalX <= columnEnd) {
+        return column.id;
+      }
+
+      const columnCenter = layout.x + layout.width / 2;
+      const distance = Math.abs(columnsLocalX - columnCenter);
+
+      if (distance < nearestDistance) {
+        nearestColumnId = column.id;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearestColumnId;
+  }
+
+  getAutoScrollTarget(screenX: number) {
+    if (this.boardViewportWidth <= 0) return null;
+
+    const leftEdge = this.boardViewportX + AUTO_SCROLL_EDGE_SIZE;
+    const rightEdge =
+      this.boardViewportX + this.boardViewportWidth - AUTO_SCROLL_EDGE_SIZE;
+
+    if (screenX < leftEdge) {
+      return Math.max(0, this.boardScrollX - AUTO_SCROLL_STEP);
+    }
+
+    if (screenX > rightEdge) {
+      return this.boardScrollX + AUTO_SCROLL_STEP;
+    }
+
+    return null;
+  }
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -34,6 +137,119 @@ function arrayMove<T>(items: T[], from: number, to: number) {
   return nextItems;
 }
 
+function animateTaskPreviewLayout() {
+  LayoutAnimation.configureNext({
+    duration: 120,
+    create: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      property: LayoutAnimation.Properties.opacity,
+    },
+    update: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+    },
+    delete: {
+      type: LayoutAnimation.Types.easeInEaseOut,
+      property: LayoutAnimation.Properties.opacity,
+    },
+  });
+}
+
+function taskDragPreviewsAreEqual(
+  preview: TaskDragPreview | null,
+  nextPreview: TaskDragPreview | null,
+) {
+  return (
+    preview?.taskId === nextPreview?.taskId &&
+    preview?.targetColumnId === nextPreview?.targetColumnId &&
+    preview?.targetIndex === nextPreview?.targetIndex &&
+    preview?.placeholderHeight === nextPreview?.placeholderHeight
+  );
+}
+
+function getTaskDragPreview(
+  taskId: Id,
+  deltaX: number,
+  deltaY: number,
+  columns: Column[],
+  tasks: Task[],
+  placeholderHeight: number,
+  targetColumnId?: Id | null,
+): TaskDragPreview | null {
+  const task = tasks.find((item) => item.id === taskId);
+  if (!task) return null;
+
+  const sourceColumnIndex = columns.findIndex(
+    (column) => column.id === task.columnId,
+  );
+  if (sourceColumnIndex === -1) return null;
+
+  const fallbackTargetColumnIndex = clamp(
+    sourceColumnIndex + Math.round(deltaX / (COLUMN_WIDTH + COLUMN_GAP)),
+    0,
+    columns.length - 1,
+  );
+  const targetColumn =
+    columns.find((column) => column.id === targetColumnId) ??
+    columns[fallbackTargetColumnIndex];
+  const sourceTasks = tasks.filter((item) => item.columnId === task.columnId);
+  const sourceTaskIndex = sourceTasks.findIndex((item) => item.id === taskId);
+
+  if (sourceTaskIndex === -1) return null;
+
+  const targetTasksWithoutDragged = tasks.filter(
+    (item) => item.columnId === targetColumn.id && item.id !== taskId,
+  );
+  const targetTaskIndex = clamp(
+    sourceTaskIndex +
+      Math.round(deltaY / (Math.max(placeholderHeight, 50) + TASK_GAP)),
+    0,
+    targetTasksWithoutDragged.length,
+  );
+
+  return {
+    taskId,
+    targetColumnId: targetColumn.id,
+    targetIndex: targetTaskIndex,
+    placeholderHeight,
+  };
+}
+
+function moveTaskToPreview(
+  taskId: Id,
+  columns: Column[],
+  tasks: Task[],
+  preview: TaskDragPreview,
+) {
+  const task = tasks.find((item) => item.id === taskId);
+  const targetColumn = columns.find(
+    (column) => column.id === preview.targetColumnId,
+  );
+
+  if (!task || !targetColumn) return tasks;
+
+  const taskToMove = { ...task, columnId: targetColumn.id };
+  const remainingTasks = tasks.filter((item) => item.id !== taskId);
+  const rebuiltTasks: Task[] = [];
+
+  columns.forEach((column) => {
+    const columnTasks = remainingTasks.filter(
+      (item) => item.columnId === column.id,
+    );
+
+    if (column.id === targetColumn.id) {
+      columnTasks.splice(
+        clamp(preview.targetIndex, 0, columnTasks.length),
+        0,
+        taskToMove,
+      );
+    }
+
+    rebuiltTasks.push(...columnTasks);
+  });
+
+  return rebuiltTasks;
+}
+
 function KanbanBoard() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -41,8 +257,19 @@ function KanbanBoard() {
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragState | null>(
     null,
   );
+  const [taskDragPreview, setTaskDragPreview] =
+    useState<TaskDragPreview | null>(null);
   const [isTouchingTask, setIsTouchingTask] = useState(false);
   const taskDragOrigin = useRef({ x: 0, y: 0 });
+  const activeTaskDragInfo = useRef<{
+    taskId: Id;
+    placeholderHeight: number;
+    startScrollX: number;
+    lastEffectiveDeltaX: number;
+  } | null>(null);
+  const lastTaskDragPreview = useRef<TaskDragPreview | null>(null);
+  const boardScrollRef = useRef<ScrollView | null>(null);
+  const [boardDragMetrics] = useState(() => new BoardDragMetrics());
   const [taskOverlayPosition] = useState(() => new Animated.ValueXY());
   const [taskOverlayOpacity] = useState(() => new Animated.Value(0));
   const [taskOverlayScale] = useState(() => new Animated.Value(1));
@@ -142,57 +369,59 @@ function KanbanBoard() {
     });
   }, []);
 
+  const updateTaskDragPreview = useCallback((
+    taskId: Id,
+    deltaX: number,
+    deltaY: number,
+    placeholderHeight: number,
+    targetColumnId?: Id | null,
+  ) => {
+    const nextPreview = getTaskDragPreview(
+      taskId,
+      deltaX,
+      deltaY,
+      columns,
+      tasks,
+      placeholderHeight,
+      targetColumnId,
+    );
+    lastTaskDragPreview.current = nextPreview;
+
+    setTaskDragPreview((currentPreview) => {
+      if (taskDragPreviewsAreEqual(currentPreview, nextPreview)) {
+        return currentPreview;
+      }
+
+      animateTaskPreviewLayout();
+      return nextPreview;
+    });
+  }, [columns, tasks]);
+
   const moveTask = useCallback((taskId: Id, deltaX: number, deltaY: number) => {
+    const placeholderHeight =
+      activeTaskDragInfo.current?.taskId === taskId
+        ? activeTaskDragInfo.current.placeholderHeight
+        : TASK_HEIGHT;
+    const effectiveDeltaX =
+      activeTaskDragInfo.current?.taskId === taskId
+        ? activeTaskDragInfo.current.lastEffectiveDeltaX
+        : deltaX;
+
     setTasks((currentTasks) => {
-      const task = currentTasks.find((item) => item.id === taskId);
-      if (!task) return currentTasks;
+      const preview =
+        lastTaskDragPreview.current?.taskId === taskId
+          ? lastTaskDragPreview.current
+          : getTaskDragPreview(
+              taskId,
+              effectiveDeltaX,
+              deltaY,
+              columns,
+              currentTasks,
+              placeholderHeight,
+            );
+      if (!preview) return currentTasks;
 
-      const sourceColumnIndex = columns.findIndex(
-        (column) => column.id === task.columnId,
-      );
-      if (sourceColumnIndex === -1) return currentTasks;
-
-      const targetColumnIndex = clamp(
-        sourceColumnIndex + Math.round(deltaX / (COLUMN_WIDTH + COLUMN_GAP)),
-        0,
-        columns.length - 1,
-      );
-      const targetColumn = columns[targetColumnIndex];
-      const sourceTasks = currentTasks.filter(
-        (item) => item.columnId === task.columnId,
-      );
-      const sourceTaskIndex = sourceTasks.findIndex(
-        (item) => item.id === taskId,
-      );
-
-      if (sourceTaskIndex === -1) return currentTasks;
-
-      const targetTasksWithoutDragged = currentTasks.filter(
-        (item) => item.columnId === targetColumn.id && item.id !== taskId,
-      );
-      const targetTaskIndex = clamp(
-        sourceTaskIndex + Math.round(deltaY / (TASK_HEIGHT + TASK_GAP)),
-        0,
-        targetTasksWithoutDragged.length,
-      );
-
-      const taskToMove = { ...task, columnId: targetColumn.id };
-      const remainingTasks = currentTasks.filter((item) => item.id !== taskId);
-      const rebuiltTasks: Task[] = [];
-
-      columns.forEach((column) => {
-        const columnTasks = remainingTasks.filter(
-          (item) => item.columnId === column.id,
-        );
-
-        if (column.id === targetColumn.id) {
-          columnTasks.splice(targetTaskIndex, 0, taskToMove);
-        }
-
-        rebuiltTasks.push(...columnTasks);
-      });
-
-      return rebuiltTasks;
+      return moveTaskToPreview(taskId, columns, currentTasks, preview);
     });
   }, [columns]);
 
@@ -203,6 +432,12 @@ function KanbanBoard() {
     ) => {
       setEditingTaskId(null);
       taskDragOrigin.current = { x: layout.x, y: layout.y };
+      activeTaskDragInfo.current = {
+        taskId: task.id,
+        placeholderHeight: layout.height,
+        startScrollX: boardDragMetrics.getBoardScrollX(),
+        lastEffectiveDeltaX: 0,
+      };
       taskOverlayPosition.stopAnimation();
       taskOverlayOpacity.stopAnimation();
       taskOverlayScale.stopAnimation();
@@ -217,6 +452,7 @@ function KanbanBoard() {
         width: layout.width,
         height: layout.height,
       });
+      updateTaskDragPreview(task.id, 0, 0, layout.height);
 
       Animated.parallel([
         Animated.timing(taskOverlayOpacity, {
@@ -237,16 +473,62 @@ function KanbanBoard() {
       taskOverlayPosition,
       taskOverlayScale,
       taskOverlayTilt,
+      updateTaskDragPreview,
+      boardDragMetrics,
     ],
   );
 
-  const handleTaskDragMove = useCallback((deltaX: number, deltaY: number) => {
+  const handleTaskDragMove = useCallback((
+    deltaX: number,
+    deltaY: number,
+    pointerX: number,
+  ) => {
+    const currentDrag = activeTaskDragInfo.current;
+
+    if (currentDrag) {
+      const autoScrollTarget =
+        boardDragMetrics.getAutoScrollTarget(pointerX);
+
+      if (autoScrollTarget !== null) {
+        boardDragMetrics.setBoardScrollX(autoScrollTarget);
+        boardScrollRef.current?.scrollTo({
+          x: autoScrollTarget,
+          animated: false,
+        });
+      }
+
+      const effectiveDeltaX =
+        deltaX +
+        boardDragMetrics.getBoardScrollX() -
+        currentDrag.startScrollX;
+      currentDrag.lastEffectiveDeltaX = effectiveDeltaX;
+
+      const targetColumnId = boardDragMetrics.getTargetColumnId(
+        columns,
+        pointerX,
+      );
+
+      updateTaskDragPreview(
+        currentDrag.taskId,
+        effectiveDeltaX,
+        deltaY,
+        currentDrag.placeholderHeight,
+        targetColumnId,
+      );
+    }
+
     taskOverlayPosition.setValue({
       x: taskDragOrigin.current.x + deltaX,
       y: taskDragOrigin.current.y + deltaY,
     });
     taskOverlayTilt.setValue(deltaX);
-  }, [taskOverlayPosition, taskOverlayTilt]);
+  }, [
+    boardDragMetrics,
+    columns,
+    taskOverlayPosition,
+    taskOverlayTilt,
+    updateTaskDragPreview,
+  ]);
 
   const handleTaskDragEnd = useCallback(() => {
     setIsTouchingTask(false);
@@ -271,7 +553,11 @@ function KanbanBoard() {
       }),
     ]).start(({ finished }) => {
       if (finished) {
+        animateTaskPreviewLayout();
         setActiveTaskDrag(null);
+        setTaskDragPreview(null);
+        activeTaskDragInfo.current = null;
+        lastTaskDragPreview.current = null;
       }
     });
   }, [taskOverlayOpacity, taskOverlayScale, taskOverlayTilt]);
@@ -284,19 +570,44 @@ function KanbanBoard() {
     setIsTouchingTask(false);
   }, []);
 
+  const handleColumnLayout = useCallback((
+    id: Id,
+    layout: { x: number; width: number },
+  ) => {
+    boardDragMetrics.setColumnLayout(id, layout);
+  }, [boardDragMetrics]);
+
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView
+        ref={boardScrollRef}
         horizontal
         style={styles.boardScroll}
         scrollEnabled={!isTouchingTask}
         directionalLockEnabled
         contentContainerStyle={styles.board}
         keyboardShouldPersistTaps="handled"
+        onLayout={(event) => {
+          const { x, width } = event.nativeEvent.layout;
+          boardDragMetrics.setBoardViewportLayout(x, width);
+        }}
         onScrollBeginDrag={() => setEditingTaskId(null)}
+        onScroll={(event) => {
+          boardDragMetrics.setBoardScrollX(
+            event.nativeEvent.contentOffset.x,
+          );
+        }}
+        scrollEventThrottle={16}
         showsHorizontalScrollIndicator={false}
       >
-        <View style={styles.columns}>
+        <View
+          style={styles.columns}
+          onLayout={(event) => {
+            boardDragMetrics.setColumnsContainerX(
+              event.nativeEvent.layout.x,
+            );
+          }}
+        >
           {columns.map((col) => (
             <ColumnContainer
               key={col.id}
@@ -313,8 +624,15 @@ function KanbanBoard() {
               onTaskDragEnd={handleTaskDragEnd}
               onTaskTouchStart={handleTaskTouchStart}
               onTaskTouchEnd={handleTaskTouchEnd}
+              onColumnLayout={handleColumnLayout}
               editingTaskId={editingTaskId}
               setEditingTaskId={setEditingTaskId}
+              taskDragPreview={
+                taskDragPreview?.targetColumnId === col.id
+                  ? taskDragPreview
+                  : null
+              }
+              draggingTaskId={activeTaskDrag?.task.id ?? null}
               tasks={tasksByColumn[String(col.id)] ?? []}
             />
           ))}

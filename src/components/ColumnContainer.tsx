@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import {
   Animated,
@@ -26,12 +27,27 @@ interface ColumnContainerProps {
     task: Task,
     layout: { x: number; y: number; width: number; height: number },
   ) => void;
-  onTaskDragMove: (deltaX: number, deltaY: number) => void;
+  onTaskDragMove: (
+    deltaX: number,
+    deltaY: number,
+    pointerX: number,
+    pointerY: number,
+  ) => void;
   onTaskDragEnd: () => void;
   onTaskTouchStart: () => void;
   onTaskTouchEnd: () => void;
+  onColumnLayout: (
+    id: Id,
+    layout: { x: number; width: number },
+  ) => void;
   editingTaskId: Id | null;
   setEditingTaskId: (id: Id | null) => void;
+  taskDragPreview: {
+    taskId: Id;
+    targetIndex: number;
+    placeholderHeight: number;
+  } | null;
+  draggingTaskId: Id | null;
   tasks: Task[];
 }
 
@@ -49,13 +65,27 @@ function ColumnContainer({
   onTaskDragEnd,
   onTaskTouchStart,
   onTaskTouchEnd,
+  onColumnLayout,
   editingTaskId,
   setEditingTaskId,
+  taskDragPreview,
+  draggingTaskId,
   tasks,
 }: ColumnContainerProps) {
   const [editMode, setEditMode] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [drag] = useState(() => new Animated.ValueXY());
+  const visibleTasks = useMemo(
+    () => tasks.filter((task) => task.id !== draggingTaskId),
+    [draggingTaskId, tasks],
+  );
+  const taskDropPreviewIndex =
+    taskDragPreview === null
+      ? null
+      : Math.min(
+          Math.max(taskDragPreview.targetIndex, 0),
+          visibleTasks.length,
+        );
 
   const columnPanResponder = useMemo(
     () =>
@@ -85,8 +115,73 @@ function ColumnContainer({
     [column.id, drag, editMode, moveColumn],
   );
 
+  function renderTaskDropPreview() {
+    if (!taskDragPreview) return null;
+
+    return (
+      <View
+        key={`task-drop-preview-${column.id}`}
+        style={[
+          styles.taskDropPreview,
+          { height: taskDragPreview.placeholderHeight },
+        ]}
+      />
+    );
+  }
+
+  function renderTaskCard(task: Task, isDragPreviewSource = false) {
+    return (
+      <TaskCard
+        key={task.id}
+        task={task}
+        deleteTask={deleteTask}
+        updateTask={updateTask}
+        moveTask={moveTask}
+        onTaskDragStart={onTaskDragStart}
+        onTaskDragMove={onTaskDragMove}
+        onTaskDragEnd={onTaskDragEnd}
+        onTaskTouchStart={onTaskTouchStart}
+        onTaskTouchEnd={onTaskTouchEnd}
+        isDragPreviewSource={isDragPreviewSource}
+        isEditing={editingTaskId === task.id}
+        setEditingTaskId={setEditingTaskId}
+      />
+    );
+  }
+
+  const renderedTaskItems = tasks.reduce<{
+    items: ReactNode[];
+    visibleTaskIndex: number;
+  }>(
+    (acc, task) => {
+      if (task.id === draggingTaskId) {
+        return {
+          ...acc,
+          items: [...acc.items, renderTaskCard(task, true)],
+        };
+      }
+
+      const nextItems = [
+        ...(taskDropPreviewIndex === acc.visibleTaskIndex
+          ? [renderTaskDropPreview()]
+          : []),
+        renderTaskCard(task),
+      ];
+
+      return {
+        items: [...acc.items, ...nextItems],
+        visibleTaskIndex: acc.visibleTaskIndex + 1,
+      };
+    },
+    { items: [], visibleTaskIndex: 0 },
+  );
+
   return (
     <Animated.View
+      onLayout={(event) => {
+        const { x, width } = event.nativeEvent.layout;
+        onColumnLayout(column.id, { x, width });
+      }}
       style={[
         styles.column,
         isDragging && styles.draggingColumn,
@@ -137,22 +232,9 @@ function ColumnContainer({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {tasks.map((task) => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            deleteTask={deleteTask}
-            updateTask={updateTask}
-            moveTask={moveTask}
-            onTaskDragStart={onTaskDragStart}
-            onTaskDragMove={onTaskDragMove}
-            onTaskDragEnd={onTaskDragEnd}
-            onTaskTouchStart={onTaskTouchStart}
-            onTaskTouchEnd={onTaskTouchEnd}
-            isEditing={editingTaskId === task.id}
-            setEditingTaskId={setEditingTaskId}
-          />
-        ))}
+        {renderedTaskItems.items}
+        {taskDropPreviewIndex === renderedTaskItems.visibleTaskIndex &&
+          renderTaskDropPreview()}
       </ScrollView>
 
       <TouchableOpacity
@@ -195,6 +277,15 @@ const styles = StyleSheet.create({
   tasksContent: {
     gap: 16,
     padding: 8,
+  },
+
+  taskDropPreview: {
+    minHeight: 50,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    borderColor: "#f43f5e",
+    borderRadius: 12,
+    backgroundColor: "rgba(244,63,94,0.12)",
   },
 
   header: {
