@@ -710,6 +710,7 @@ const styles = StyleSheet.create({
     minWidth: COLUMN_WIDTH,
     height: 60,
     alignItems: "center",
+    justifyContent: "center",
     flexDirection: "row",
     gap: 8,
     padding: 16,
