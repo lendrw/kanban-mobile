@@ -18,8 +18,8 @@ const COLUMN_WIDTH = 250;
 const COLUMN_GAP = 16;
 const TASK_HEIGHT = 100;
 const TASK_GAP = 16;
-const AUTO_SCROLL_EDGE_SIZE = 56;
-const AUTO_SCROLL_STEP = 20;
+const AUTO_SCROLL_EDGE_SIZE = 30;
+const AUTO_SCROLL_STEP = 5;
 const BOARD_STORAGE_KEY = "@kanban-mobile/board-state";
 
 type PersistedBoardState = {
@@ -54,11 +54,7 @@ function isId(value: unknown): value is Id {
 }
 
 function isPersistedColumn(value: unknown): value is Column {
-  return (
-    isRecord(value) &&
-    isId(value.id) &&
-    typeof value.title === "string"
-  );
+  return isRecord(value) && isId(value.id) && typeof value.title === "string";
 }
 
 function isPersistedTask(value: unknown): value is Task {
@@ -169,12 +165,23 @@ class BoardDragMetrics {
     const rightEdge =
       this.boardViewportX + this.boardViewportWidth - AUTO_SCROLL_EDGE_SIZE;
 
+    const MIN_SCROLL = 2;
+    const MAX_SCROLL = 18;
+
     if (screenX < leftEdge) {
-      return Math.max(0, this.boardScrollX - AUTO_SCROLL_STEP);
+      const distance = leftEdge - screenX;
+
+      const speed = Math.min(MAX_SCROLL, MIN_SCROLL + distance * 0.25);
+
+      return Math.max(0, this.boardScrollX - speed);
     }
 
     if (screenX > rightEdge) {
-      return this.boardScrollX + AUTO_SCROLL_STEP;
+      const distance = screenX - rightEdge;
+
+      const speed = Math.min(MAX_SCROLL, MIN_SCROLL + distance * 0.25);
+
+      return this.boardScrollX + speed;
     }
 
     return null;
@@ -367,12 +374,11 @@ function KanbanBoard() {
 
     const boardState: PersistedBoardState = { columns, tasks };
 
-    AsyncStorage.setItem(
-      BOARD_STORAGE_KEY,
-      JSON.stringify(boardState),
-    ).catch((error: unknown) => {
-      console.warn("Unable to save board", error);
-    });
+    AsyncStorage.setItem(BOARD_STORAGE_KEY, JSON.stringify(boardState)).catch(
+      (error: unknown) => {
+        console.warn("Unable to save board", error);
+      },
+    );
   }, [columns, hasLoadedStoredBoard, tasks]);
 
   const tasksByColumn = useMemo(
@@ -469,61 +475,67 @@ function KanbanBoard() {
     });
   }, []);
 
-  const updateTaskDragPreview = useCallback((
-    taskId: Id,
-    deltaX: number,
-    deltaY: number,
-    placeholderHeight: number,
-    targetColumnId?: Id | null,
-  ) => {
-    const nextPreview = getTaskDragPreview(
-      taskId,
-      deltaX,
-      deltaY,
-      columns,
-      tasks,
-      placeholderHeight,
-      targetColumnId,
-    );
-    lastTaskDragPreview.current = nextPreview;
+  const updateTaskDragPreview = useCallback(
+    (
+      taskId: Id,
+      deltaX: number,
+      deltaY: number,
+      placeholderHeight: number,
+      targetColumnId?: Id | null,
+    ) => {
+      const nextPreview = getTaskDragPreview(
+        taskId,
+        deltaX,
+        deltaY,
+        columns,
+        tasks,
+        placeholderHeight,
+        targetColumnId,
+      );
+      lastTaskDragPreview.current = nextPreview;
 
-    setTaskDragPreview((currentPreview) => {
-      if (taskDragPreviewsAreEqual(currentPreview, nextPreview)) {
-        return currentPreview;
-      }
+      setTaskDragPreview((currentPreview) => {
+        if (taskDragPreviewsAreEqual(currentPreview, nextPreview)) {
+          return currentPreview;
+        }
 
-      animateTaskPreviewLayout();
-      return nextPreview;
-    });
-  }, [columns, tasks]);
+        animateTaskPreviewLayout();
+        return nextPreview;
+      });
+    },
+    [columns, tasks],
+  );
 
-  const moveTask = useCallback((taskId: Id, deltaX: number, deltaY: number) => {
-    const placeholderHeight =
-      activeTaskDragInfo.current?.taskId === taskId
-        ? activeTaskDragInfo.current.placeholderHeight
-        : TASK_HEIGHT;
-    const effectiveDeltaX =
-      activeTaskDragInfo.current?.taskId === taskId
-        ? activeTaskDragInfo.current.lastEffectiveDeltaX
-        : deltaX;
+  const moveTask = useCallback(
+    (taskId: Id, deltaX: number, deltaY: number) => {
+      const placeholderHeight =
+        activeTaskDragInfo.current?.taskId === taskId
+          ? activeTaskDragInfo.current.placeholderHeight
+          : TASK_HEIGHT;
+      const effectiveDeltaX =
+        activeTaskDragInfo.current?.taskId === taskId
+          ? activeTaskDragInfo.current.lastEffectiveDeltaX
+          : deltaX;
 
-    setTasks((currentTasks) => {
-      const preview =
-        lastTaskDragPreview.current?.taskId === taskId
-          ? lastTaskDragPreview.current
-          : getTaskDragPreview(
-              taskId,
-              effectiveDeltaX,
-              deltaY,
-              columns,
-              currentTasks,
-              placeholderHeight,
-            );
-      if (!preview) return currentTasks;
+      setTasks((currentTasks) => {
+        const preview =
+          lastTaskDragPreview.current?.taskId === taskId
+            ? lastTaskDragPreview.current
+            : getTaskDragPreview(
+                taskId,
+                effectiveDeltaX,
+                deltaY,
+                columns,
+                currentTasks,
+                placeholderHeight,
+              );
+        if (!preview) return currentTasks;
 
-      return moveTaskToPreview(taskId, columns, currentTasks, preview);
-    });
-  }, [columns]);
+        return moveTaskToPreview(taskId, columns, currentTasks, preview);
+      });
+    },
+    [columns],
+  );
 
   const handleTaskDragStart = useCallback(
     (
@@ -578,57 +590,61 @@ function KanbanBoard() {
     ],
   );
 
-  const handleTaskDragMove = useCallback((
-    deltaX: number,
-    deltaY: number,
-    pointerX: number,
-  ) => {
-    const currentDrag = activeTaskDragInfo.current;
+  const handleTaskDragMove = useCallback(
+    (deltaX: number, deltaY: number, pointerX: number) => {
+      const currentDrag = activeTaskDragInfo.current;
 
-    if (currentDrag) {
-      const autoScrollTarget =
-        boardDragMetrics.getAutoScrollTarget(pointerX);
+      if (currentDrag) {
+        const autoScrollTarget = boardDragMetrics.getAutoScrollTarget(pointerX);
 
-      if (autoScrollTarget !== null) {
-        boardDragMetrics.setBoardScrollX(autoScrollTarget);
-        boardScrollRef.current?.scrollTo({
-          x: autoScrollTarget,
-          animated: false,
-        });
+        if (autoScrollTarget !== null) {
+          boardScrollRef.current?.scrollTo({
+            x: autoScrollTarget,
+            animated: false,
+          });
+        }
+
+        const effectiveDeltaX =
+          deltaX +
+          boardDragMetrics.getBoardScrollX() -
+          currentDrag.startScrollX;
+
+        currentDrag.lastEffectiveDeltaX = effectiveDeltaX;
+
+        const targetColumnId = boardDragMetrics.getTargetColumnId(
+          columns,
+          pointerX,
+        );
+
+        updateTaskDragPreview(
+          currentDrag.taskId,
+          effectiveDeltaX,
+          deltaY,
+          currentDrag.placeholderHeight,
+          targetColumnId,
+        );
       }
 
-      const effectiveDeltaX =
-        deltaX +
-        boardDragMetrics.getBoardScrollX() -
-        currentDrag.startScrollX;
-      currentDrag.lastEffectiveDeltaX = effectiveDeltaX;
+      const overlayWidth = activeTaskDrag?.width ?? 250;
 
-      const targetColumnId = boardDragMetrics.getTargetColumnId(
-        columns,
-        pointerX,
+      taskOverlayPosition.setValue({
+        x: pointerX - overlayWidth / 2,
+        y: taskDragOrigin.current.y + deltaY,
+      });
+
+      taskOverlayTilt.setValue(
+        currentDrag ? currentDrag.lastEffectiveDeltaX : deltaX,
       );
-
-      updateTaskDragPreview(
-        currentDrag.taskId,
-        effectiveDeltaX,
-        deltaY,
-        currentDrag.placeholderHeight,
-        targetColumnId,
-      );
-    }
-
-    taskOverlayPosition.setValue({
-      x: taskDragOrigin.current.x + deltaX,
-      y: taskDragOrigin.current.y + deltaY,
-    });
-    taskOverlayTilt.setValue(deltaX);
-  }, [
-    boardDragMetrics,
-    columns,
-    taskOverlayPosition,
-    taskOverlayTilt,
-    updateTaskDragPreview,
-  ]);
+    },
+    [
+      activeTaskDrag,
+      boardDragMetrics,
+      columns,
+      taskOverlayPosition,
+      taskOverlayTilt,
+      updateTaskDragPreview,
+    ],
+  );
 
   const handleTaskDragEnd = useCallback(() => {
     setIsTouchingTask(false);
@@ -670,12 +686,12 @@ function KanbanBoard() {
     setIsTouchingTask(false);
   }, []);
 
-  const handleColumnLayout = useCallback((
-    id: Id,
-    layout: { x: number; width: number },
-  ) => {
-    boardDragMetrics.setColumnLayout(id, layout);
-  }, [boardDragMetrics]);
+  const handleColumnLayout = useCallback(
+    (id: Id, layout: { x: number; width: number }) => {
+      boardDragMetrics.setColumnLayout(id, layout);
+    },
+    [boardDragMetrics],
+  );
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -693,9 +709,7 @@ function KanbanBoard() {
         }}
         onScrollBeginDrag={() => setEditingTaskId(null)}
         onScroll={(event) => {
-          boardDragMetrics.setBoardScrollX(
-            event.nativeEvent.contentOffset.x,
-          );
+          boardDragMetrics.setBoardScrollX(event.nativeEvent.contentOffset.x);
         }}
         scrollEventThrottle={16}
         showsHorizontalScrollIndicator={false}
@@ -703,9 +717,7 @@ function KanbanBoard() {
         <View
           style={styles.columns}
           onLayout={(event) => {
-            boardDragMetrics.setColumnsContainerX(
-              event.nativeEvent.layout.x,
-            );
+            boardDragMetrics.setColumnsContainerX(event.nativeEvent.layout.x);
           }}
         >
           {columns.map((col) => (
