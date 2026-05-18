@@ -332,7 +332,7 @@ const styles = StyleSheet.create({
 
   titleInput: {
     flex: 1,
-    height: 36,
+    height: 40,
     color: "#ffffff",
     borderWidth: 1,
     borderColor: "#f43f5e",
