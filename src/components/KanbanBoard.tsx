@@ -2,12 +2,10 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Animated,
   LayoutAnimation,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  UIManager,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -39,10 +37,6 @@ type ColumnLayout = {
   x: number;
   width: number;
 };
-
-if (Platform.OS === "android") {
-  UIManager.setLayoutAnimationEnabledExperimental?.(true);
-}
 
 class BoardDragMetrics {
   private boardScrollX = 0;
