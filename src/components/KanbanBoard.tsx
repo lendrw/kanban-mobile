@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   LayoutAnimation,
@@ -19,6 +20,12 @@ const TASK_HEIGHT = 100;
 const TASK_GAP = 16;
 const AUTO_SCROLL_EDGE_SIZE = 56;
 const AUTO_SCROLL_STEP = 20;
+const BOARD_STORAGE_KEY = "@kanban-mobile/board-state";
+
+type PersistedBoardState = {
+  columns: Column[];
+  tasks: Task[];
+};
 
 type TaskDragState = {
   task: Task;
@@ -37,6 +44,60 @@ type ColumnLayout = {
   x: number;
   width: number;
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isId(value: unknown): value is Id {
+  return typeof value === "string" || typeof value === "number";
+}
+
+function isPersistedColumn(value: unknown): value is Column {
+  return (
+    isRecord(value) &&
+    isId(value.id) &&
+    typeof value.title === "string"
+  );
+}
+
+function isPersistedTask(value: unknown): value is Task {
+  return (
+    isRecord(value) &&
+    isId(value.id) &&
+    isId(value.columnId) &&
+    typeof value.content === "string"
+  );
+}
+
+function parsePersistedBoardState(
+  value: string | null,
+): PersistedBoardState | null {
+  if (!value) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+
+    if (
+      !isRecord(parsed) ||
+      !Array.isArray(parsed.columns) ||
+      !Array.isArray(parsed.tasks)
+    ) {
+      return null;
+    }
+
+    const columns = parsed.columns.filter(isPersistedColumn);
+    const columnIds = new Set(columns.map((column) => String(column.id)));
+    const tasks = parsed.tasks.filter(
+      (task): task is Task =>
+        isPersistedTask(task) && columnIds.has(String(task.columnId)),
+    );
+
+    return { columns, tasks };
+  } catch {
+    return null;
+  }
+}
 
 class BoardDragMetrics {
   private boardScrollX = 0;
@@ -247,6 +308,7 @@ function moveTaskToPreview(
 function KanbanBoard() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [hasLoadedStoredBoard, setHasLoadedStoredBoard] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<Id | null>(null);
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragState | null>(
     null,
@@ -268,6 +330,50 @@ function KanbanBoard() {
   const [taskOverlayOpacity] = useState(() => new Animated.Value(0));
   const [taskOverlayScale] = useState(() => new Animated.Value(1));
   const [taskOverlayTilt] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadBoard() {
+      try {
+        const storedBoard = parsePersistedBoardState(
+          await AsyncStorage.getItem(BOARD_STORAGE_KEY),
+        );
+
+        if (!isMounted) return;
+
+        if (storedBoard) {
+          setColumns(storedBoard.columns);
+          setTasks(storedBoard.tasks);
+        }
+      } catch (error) {
+        console.warn("Unable to load saved board", error);
+      } finally {
+        if (isMounted) {
+          setHasLoadedStoredBoard(true);
+        }
+      }
+    }
+
+    void loadBoard();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedStoredBoard) return;
+
+    const boardState: PersistedBoardState = { columns, tasks };
+
+    AsyncStorage.setItem(
+      BOARD_STORAGE_KEY,
+      JSON.stringify(boardState),
+    ).catch((error: unknown) => {
+      console.warn("Unable to save board", error);
+    });
+  }, [columns, hasLoadedStoredBoard, tasks]);
 
   const tasksByColumn = useMemo(
     () =>
