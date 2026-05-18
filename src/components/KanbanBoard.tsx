@@ -19,7 +19,6 @@ const COLUMN_GAP = 16;
 const TASK_HEIGHT = 100;
 const TASK_GAP = 16;
 const AUTO_SCROLL_EDGE_SIZE = 30;
-const AUTO_SCROLL_STEP = 5;
 const BOARD_STORAGE_KEY = "@kanban-mobile/board-state";
 
 type PersistedBoardState = {
