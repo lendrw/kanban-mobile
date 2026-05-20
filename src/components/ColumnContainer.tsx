@@ -225,8 +225,8 @@ function ColumnContainer({
     return (
       <Reanimated.View
         key={`task-drop-preview-${column.id}`}
-        entering={FadeIn.duration(100)}
-        exiting={FadeOut.duration(90)}
+        entering={undefined}
+        exiting={FadeOut.duration(60)}
         layout={TASK_PREVIEW_TRANSITION}
         style={[
           styles.taskDropPreview,
@@ -258,8 +258,8 @@ function ColumnContainer({
       <Reanimated.View
         key={task.id}
         collapsable={false}
-        entering={isDragPreviewSource ? undefined : FadeIn.duration(90)}
-        exiting={isDragPreviewSource ? undefined : FadeOut.duration(80)}
+        entering={undefined}
+        exiting={isDragPreviewSource ? undefined : FadeOut.duration(60)}
         layout={TASK_ITEM_TRANSITION}
         onLayout={
           isDragPreviewSource
