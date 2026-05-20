@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import TrashIcon from "../icons/TrashIcon";
-import type { Id, Task } from "../types";
+import type { Id, Task, TaskDragLayout } from "../types";
 
 const DRAG_ACTIVATION_DELAY_MS = 180;
 const DRAG_ACTIVATION_DISTANCE = 8;
@@ -71,13 +71,6 @@ class TaskGestureState {
   }
 }
 
-type TaskDragLayout = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
 interface TaskCardProps {
   task: Task;
   deleteTask: (id: Task["id"]) => void;
@@ -93,7 +86,7 @@ interface TaskCardProps {
     pointerX: number,
     pointerY: number,
   ) => void;
-  onTaskDragEnd?: () => void;
+  onTaskDragEnd?: (dropAccepted: boolean) => void;
   onTaskTouchStart?: () => void;
   onTaskTouchEnd?: () => void;
   setEditingTaskId: (id: Id | null) => void;
@@ -144,6 +137,8 @@ function TaskCard({
       y: pageY - touchOffsetY,
       width,
       height,
+      touchOffsetX,
+      touchOffsetY,
     };
   }, [cardLayout.height, cardLayout.width]);
 
@@ -185,11 +180,11 @@ function TaskCard({
     setIsDragging(false);
 
     if (wasDragging) {
-      onTaskDragEnd?.();
-
       if (shouldMoveTask) {
         moveTask(task.id, deltaX, deltaY);
       }
+
+      onTaskDragEnd?.(shouldMoveTask);
     }
 
     onTaskTouchEnd?.();
@@ -351,6 +346,8 @@ function TaskCard({
     >
       <TouchableOpacity
         activeOpacity={0.9}
+        accessibilityLabel={`Edit task ${task.content}`}
+        accessibilityRole="button"
         delayLongPress={DRAG_ACTIVATION_DELAY_MS}
         onLongPress={(event) => {
           startTaskDrag(event, undefined, {
@@ -375,6 +372,8 @@ function TaskCard({
 
       <TouchableOpacity
         activeOpacity={0.7}
+        accessibilityLabel={`Delete task ${task.content}`}
+        accessibilityRole="button"
         onPress={(event) => {
           event.stopPropagation();
           deleteTask(task.id);

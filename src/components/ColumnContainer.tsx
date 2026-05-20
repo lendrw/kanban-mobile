@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   PanResponder,
+  type LayoutChangeEvent,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,9 +11,28 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Reanimated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+} from "react-native-reanimated";
 import TrashIcon from "../icons/TrashIcon";
-import type { Column, Id, Task } from "../types";
+import type {
+  Column,
+  ColumnScrollMetrics,
+  Id,
+  Task,
+  TaskDragLayout,
+  TaskListItemLayout,
+} from "../types";
 import TaskCard from "./TaskCard";
+
+const TASK_ITEM_TRANSITION = LinearTransition.springify()
+  .damping(18)
+  .stiffness(220);
+const TASK_PREVIEW_TRANSITION = LinearTransition.springify()
+  .damping(20)
+  .stiffness(260);
 
 interface ColumnContainerProps {
   column: Column;
@@ -23,22 +43,28 @@ interface ColumnContainerProps {
   updateTask: (id: Task["id"], content: Task["content"]) => void;
   moveColumn: (id: Id, deltaX: number) => void;
   moveTask: (id: Id, deltaX: number, deltaY: number) => void;
-  onTaskDragStart: (
-    task: Task,
-    layout: { x: number; y: number; width: number; height: number },
-  ) => void;
+  onTaskDragStart: (task: Task, layout: TaskDragLayout) => void;
   onTaskDragMove: (
     deltaX: number,
     deltaY: number,
     pointerX: number,
     pointerY: number,
   ) => void;
-  onTaskDragEnd: () => void;
+  onTaskDragEnd: (dropAccepted: boolean) => void;
   onTaskTouchStart: () => void;
   onTaskTouchEnd: () => void;
   onColumnLayout: (
     id: Id,
     layout: { x: number; width: number },
+  ) => void;
+  onColumnScrollMetricsChange: (
+    id: Id,
+    metrics: ColumnScrollMetrics,
+  ) => void;
+  onColumnScrollYChange: (id: Id, scrollY: number) => void;
+  onColumnTaskLayoutsChange: (
+    id: Id,
+    layouts: TaskListItemLayout[],
   ) => void;
   editingTaskId: Id | null;
   setEditingTaskId: (id: Id | null) => void;
@@ -48,6 +74,8 @@ interface ColumnContainerProps {
     placeholderHeight: number;
   } | null;
   draggingTaskId: Id | null;
+  isTaskDragActive: boolean;
+  isDropTarget: boolean;
   tasks: Task[];
 }
 
@@ -66,15 +94,25 @@ function ColumnContainer({
   onTaskTouchStart,
   onTaskTouchEnd,
   onColumnLayout,
+  onColumnScrollMetricsChange,
+  onColumnScrollYChange,
+  onColumnTaskLayoutsChange,
   editingTaskId,
   setEditingTaskId,
   taskDragPreview,
   draggingTaskId,
+  isTaskDragActive,
+  isDropTarget,
   tasks,
 }: ColumnContainerProps) {
   const [editMode, setEditMode] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [drag] = useState(() => new Animated.ValueXY());
+  const tasksScrollRef = useRef<ScrollView | null>(null);
+  const scrollYRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const viewportHeightRef = useRef(0);
+  const taskLayoutsRef = useRef(new Map<string, TaskListItemLayout>());
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.id !== draggingTaskId),
     [draggingTaskId, tasks],
@@ -86,6 +124,86 @@ function ColumnContainer({
           Math.max(taskDragPreview.targetIndex, 0),
           visibleTasks.length,
         );
+
+  const publishTaskLayouts = useCallback(() => {
+    const layouts = visibleTasks
+      .map((task) => taskLayoutsRef.current.get(String(task.id)))
+      .filter((layout): layout is TaskListItemLayout => layout !== undefined);
+
+    onColumnTaskLayoutsChange(column.id, layouts);
+  }, [column.id, onColumnTaskLayoutsChange, visibleTasks]);
+
+  const publishScrollMetrics = useCallback(() => {
+    const scrollView = tasksScrollRef.current;
+    if (!scrollView) return;
+
+    const nativeScrollRef = scrollView.getNativeScrollRef();
+    if (!nativeScrollRef) return;
+
+    nativeScrollRef.measureInWindow(
+      (_x: number, windowY: number, _width: number, height: number) => {
+        const viewportHeight = height || viewportHeightRef.current;
+        viewportHeightRef.current = viewportHeight;
+
+        onColumnScrollMetricsChange(column.id, {
+          windowY,
+          viewportHeight,
+          contentHeight: contentHeightRef.current,
+          scrollY: scrollYRef.current,
+          scrollTo: (y) => {
+            scrollYRef.current = y;
+            onColumnScrollYChange(column.id, y);
+            scrollView.scrollTo({ y, animated: false });
+          },
+        });
+      },
+    );
+  }, [column.id, onColumnScrollMetricsChange, onColumnScrollYChange]);
+
+  useEffect(() => {
+    publishScrollMetrics();
+  }, [publishScrollMetrics, tasks.length]);
+
+  useEffect(() => {
+    if (isTaskDragActive || isDropTarget) {
+      publishScrollMetrics();
+    }
+  }, [isDropTarget, isTaskDragActive, publishScrollMetrics]);
+
+  useEffect(() => {
+    const visibleTaskIds = new Set(visibleTasks.map((task) => String(task.id)));
+
+    taskLayoutsRef.current.forEach((_layout, taskId) => {
+      if (!visibleTaskIds.has(taskId)) {
+        taskLayoutsRef.current.delete(taskId);
+      }
+    });
+
+    publishTaskLayouts();
+  }, [publishTaskLayouts, visibleTasks]);
+
+  const handleTaskLayout = useCallback(
+    (task: Task, event: LayoutChangeEvent) => {
+      const { y, height } = event.nativeEvent.layout;
+      const taskId = String(task.id);
+      const currentLayout = taskLayoutsRef.current.get(taskId);
+
+      if (
+        currentLayout?.y === y &&
+        currentLayout?.height === height
+      ) {
+        return;
+      }
+
+      taskLayoutsRef.current.set(taskId, {
+        taskId: task.id,
+        y,
+        height,
+      });
+      publishTaskLayouts();
+    },
+    [publishTaskLayouts],
+  );
 
   const columnPanResponder = useMemo(
     () =>
@@ -119,8 +237,11 @@ function ColumnContainer({
     if (!taskDragPreview) return null;
 
     return (
-      <View
+      <Reanimated.View
         key={`task-drop-preview-${column.id}`}
+        entering={FadeIn.duration(100)}
+        exiting={FadeOut.duration(90)}
+        layout={TASK_PREVIEW_TRANSITION}
         style={[
           styles.taskDropPreview,
           { height: taskDragPreview.placeholderHeight },
@@ -130,9 +251,8 @@ function ColumnContainer({
   }
 
   function renderTaskCard(task: Task, isDragPreviewSource = false) {
-    return (
+    const taskCard = (
       <TaskCard
-        key={task.id}
         task={task}
         deleteTask={deleteTask}
         updateTask={updateTask}
@@ -146,6 +266,24 @@ function ColumnContainer({
         isEditing={editingTaskId === task.id}
         setEditingTaskId={setEditingTaskId}
       />
+    );
+
+    return (
+      <Reanimated.View
+        key={task.id}
+        collapsable={false}
+        entering={isDragPreviewSource ? undefined : FadeIn.duration(90)}
+        exiting={isDragPreviewSource ? undefined : FadeOut.duration(80)}
+        layout={TASK_ITEM_TRANSITION}
+        onLayout={
+          isDragPreviewSource
+            ? undefined
+            : (event) => handleTaskLayout(task, event)
+        }
+        style={isDragPreviewSource ? styles.hiddenTaskSlot : undefined}
+      >
+        {taskCard}
+      </Reanimated.View>
     );
   }
 
@@ -185,11 +323,14 @@ function ColumnContainer({
       style={[
         styles.column,
         isDragging && styles.draggingColumn,
+        isDropTarget && styles.dropTargetColumn,
         { transform: [{ translateX: drag.x }] },
       ]}
     >
       <TouchableOpacity
         activeOpacity={0.9}
+        accessibilityLabel={`Edit column ${column.title}`}
+        accessibilityRole="button"
         onPress={() => {
           setEditingTaskId(null);
           setEditMode(true);
@@ -216,7 +357,10 @@ function ColumnContainer({
         </View>
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => {
+          accessibilityLabel={`Delete column ${column.title}`}
+          accessibilityRole="button"
+          onPress={(event) => {
+            event.stopPropagation();
             setEditingTaskId(null);
             deleteColumn(column.id);
           }}
@@ -227,10 +371,27 @@ function ColumnContainer({
       </TouchableOpacity>
 
       <ScrollView
+        ref={tasksScrollRef}
+        collapsable={false}
         style={styles.tasks}
         contentContainerStyle={styles.tasksContent}
         keyboardShouldPersistTaps="handled"
+        scrollEnabled={!isTaskDragActive}
         showsVerticalScrollIndicator={false}
+        onContentSizeChange={(_width, height) => {
+          contentHeightRef.current = height;
+          publishScrollMetrics();
+        }}
+        onLayout={(event) => {
+          viewportHeightRef.current = event.nativeEvent.layout.height;
+          publishScrollMetrics();
+        }}
+        onScroll={(event) => {
+          const scrollY = event.nativeEvent.contentOffset.y;
+          scrollYRef.current = scrollY;
+          onColumnScrollYChange(column.id, scrollY);
+        }}
+        scrollEventThrottle={16}
       >
         {renderedTaskItems.items}
         {taskDropPreviewIndex === renderedTaskItems.visibleTaskIndex &&
@@ -239,6 +400,8 @@ function ColumnContainer({
 
       <TouchableOpacity
         activeOpacity={0.8}
+        accessibilityLabel={`Add task to ${column.title}`}
+        accessibilityRole="button"
         style={styles.footer}
         onPress={() => {
           setEditingTaskId(null);
@@ -257,16 +420,34 @@ const styles = StyleSheet.create({
     width: 250,
     maxHeight: 500,
     backgroundColor: "#161c22",
+    borderWidth: 2,
+    borderColor: "transparent",
     borderRadius: 6,
     overflow: "hidden",
   },
 
   draggingColumn: {
     opacity: 0.45,
-    borderWidth: 2,
     borderColor: "#f43f5e",
     zIndex: 10,
     elevation: 10,
+  },
+
+  dropTargetColumn: {
+    borderColor: "#38bdf8",
+    backgroundColor: "#13202a",
+    shadowColor: "#38bdf8",
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+  },
+
+  hiddenTaskSlot: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    height: 0,
   },
 
   tasks: {
@@ -283,9 +464,9 @@ const styles = StyleSheet.create({
     minHeight: 50,
     borderWidth: 2,
     borderStyle: "dashed",
-    borderColor: "#f43f5e",
+    borderColor: "#38bdf8",
     borderRadius: 12,
-    backgroundColor: "rgba(244,63,94,0.12)",
+    backgroundColor: "rgba(56,189,248,0.14)",
   },
 
   header: {
