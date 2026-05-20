@@ -4,6 +4,10 @@ A mobile-friendly Kanban board built with React Native and Expo. The app lets
 you create columns and tasks, edit their content, delete items, and rearrange
 the board with drag-and-drop interactions.
 
+<p align="center">
+  <img src="docs/board.png" alt="Kanban Mobile board screenshot" width="420" />
+</p>
+
 ## Features
 
 - Create, edit, delete, and reorder columns.
