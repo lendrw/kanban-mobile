@@ -28,11 +28,12 @@ import type {
 import TaskCard from "./TaskCard";
 
 const TASK_ITEM_TRANSITION = LinearTransition.springify()
-  .damping(18)
-  .stiffness(220);
+  .damping(26)
+  .stiffness(140);
+
 const TASK_PREVIEW_TRANSITION = LinearTransition.springify()
-  .damping(20)
-  .stiffness(260);
+  .damping(28)
+  .stiffness(150);
 
 interface ColumnContainerProps {
   column: Column;
@@ -53,19 +54,10 @@ interface ColumnContainerProps {
   onTaskDragEnd: (dropAccepted: boolean) => void;
   onTaskTouchStart: () => void;
   onTaskTouchEnd: () => void;
-  onColumnLayout: (
-    id: Id,
-    layout: { x: number; width: number },
-  ) => void;
-  onColumnScrollMetricsChange: (
-    id: Id,
-    metrics: ColumnScrollMetrics,
-  ) => void;
+  onColumnLayout: (id: Id, layout: { x: number; width: number }) => void;
+  onColumnScrollMetricsChange: (id: Id, metrics: ColumnScrollMetrics) => void;
   onColumnScrollYChange: (id: Id, scrollY: number) => void;
-  onColumnTaskLayoutsChange: (
-    id: Id,
-    layouts: TaskListItemLayout[],
-  ) => void;
+  onColumnTaskLayoutsChange: (id: Id, layouts: TaskListItemLayout[]) => void;
   editingTaskId: Id | null;
   setEditingTaskId: (id: Id | null) => void;
   taskDragPreview: {
@@ -120,10 +112,7 @@ function ColumnContainer({
   const taskDropPreviewIndex =
     taskDragPreview === null
       ? null
-      : Math.min(
-          Math.max(taskDragPreview.targetIndex, 0),
-          visibleTasks.length,
-        );
+      : Math.min(Math.max(taskDragPreview.targetIndex, 0), visibleTasks.length);
 
   const publishTaskLayouts = useCallback(() => {
     const layouts = visibleTasks
@@ -188,10 +177,7 @@ function ColumnContainer({
       const taskId = String(task.id);
       const currentLayout = taskLayoutsRef.current.get(taskId);
 
-      if (
-        currentLayout?.y === y &&
-        currentLayout?.height === height
-      ) {
+      if (currentLayout?.y === y && currentLayout?.height === height) {
         return;
       }
 

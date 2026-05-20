@@ -255,8 +255,7 @@ class BoardDragMetrics {
     if (maxScrollY <= 0) return null;
 
     const topDistance = pointerY - metrics.windowY;
-    const bottomDistance =
-      metrics.windowY + metrics.viewportHeight - pointerY;
+    const bottomDistance = metrics.windowY + metrics.viewportHeight - pointerY;
 
     if (topDistance < VERTICAL_AUTO_SCROLL_EDGE_SIZE) {
       const intensity = clamp(
@@ -449,8 +448,9 @@ function KanbanBoard() {
     pointerX: number;
     pointerY: number;
   } | null>(null);
-  const autoScrollFrame =
-    useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const autoScrollFrame = useRef<ReturnType<
+    typeof requestAnimationFrame
+  > | null>(null);
   const lastHapticColumnId = useRef<Id | null>(null);
   const lastColumnHapticAt = useRef(0);
   const boardScrollRef = useRef<ScrollView | null>(null);
@@ -694,32 +694,29 @@ function KanbanBoard() {
   useEffect(() => stopAutoScrollLoop, [stopAutoScrollLoop]);
 
   const updateDragFromPointer = useCallback(
-    (
-      deltaX: number,
-      deltaY: number,
-      pointerX: number,
-      pointerY: number,
-    ) => {
+    (deltaX: number, deltaY: number, pointerX: number, pointerY: number) => {
       const currentDrag = activeTaskDragInfo.current;
+
       if (!currentDrag) return false;
 
       let didAutoScroll = false;
+
       const horizontalAutoScrollTarget =
         boardDragMetrics.getAutoScrollTarget(pointerX);
 
       if (horizontalAutoScrollTarget !== null) {
         boardDragMetrics.setBoardScrollX(horizontalAutoScrollTarget);
+
         boardScrollRef.current?.scrollTo({
           x: horizontalAutoScrollTarget,
           animated: false,
         });
+
         didAutoScroll = true;
       }
 
       const effectiveDeltaX =
-        deltaX +
-        boardDragMetrics.getBoardScrollX() -
-        currentDrag.startScrollX;
+        deltaX + boardDragMetrics.getBoardScrollX() - currentDrag.startScrollX;
 
       currentDrag.lastEffectiveDeltaX = effectiveDeltaX;
 
@@ -740,6 +737,7 @@ function KanbanBoard() {
             targetColumnId,
             verticalAutoScrollTarget.scrollY,
           );
+
           didAutoScroll = true;
         }
       }
@@ -752,6 +750,7 @@ function KanbanBoard() {
                 task.columnId === targetColumnId &&
                 task.id !== currentDrag.taskId,
             ).length;
+
       const targetIndex =
         targetColumnId === null
           ? null
@@ -771,10 +770,12 @@ function KanbanBoard() {
         targetIndex,
       );
 
+      // movimento preso no dedo
       taskOverlayPosition.setValue({
         x: pointerX - currentDrag.touchOffsetX,
         y: pointerY - currentDrag.touchOffsetY,
       });
+
       taskOverlayTilt.setValue(effectiveDeltaX);
 
       return didAutoScroll;
@@ -852,9 +853,9 @@ function KanbanBoard() {
           useNativeDriver: true,
         }),
         Animated.spring(taskOverlayScale, {
-          toValue: 1.045,
-          tension: 260,
-          friction: 18,
+          toValue: 1.015,
+          tension: 120,
+          friction: 22,
           useNativeDriver: true,
         }),
       ]).start();
@@ -871,12 +872,7 @@ function KanbanBoard() {
   );
 
   const handleTaskDragMove = useCallback(
-    (
-      deltaX: number,
-      deltaY: number,
-      pointerX: number,
-      pointerY: number,
-    ) => {
+    (deltaX: number, deltaY: number, pointerX: number, pointerY: number) => {
       latestDragPointer.current = { deltaX, deltaY, pointerX, pointerY };
 
       const didAutoScroll = updateDragFromPointer(
@@ -893,50 +889,48 @@ function KanbanBoard() {
     [scheduleAutoScrollLoop, updateDragFromPointer],
   );
 
-  const handleTaskDragEnd = useCallback((dropAccepted: boolean) => {
-    setIsTouchingTask(false);
-    stopAutoScrollLoop();
-    latestDragPointer.current = null;
+  const handleTaskDragEnd = useCallback(
+    (dropAccepted: boolean) => {
+      setIsTouchingTask(false);
+      stopAutoScrollLoop();
+      latestDragPointer.current = null;
 
-    if (dropAccepted) {
-      triggerHaptic(() =>
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium),
-      );
-    }
-
-    Animated.parallel([
-      Animated.timing(taskOverlayOpacity, {
-        toValue: 0,
-        duration: 130,
-        useNativeDriver: true,
-      }),
-      Animated.spring(taskOverlayScale, {
-        toValue: dropAccepted ? 1 : 0.96,
-        tension: 220,
-        friction: 18,
-        useNativeDriver: true,
-      }),
-      Animated.spring(taskOverlayTilt, {
-        toValue: 0,
-        tension: 220,
-        friction: 18,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) {
-        setActiveTaskDrag(null);
-        setTaskDragPreview(null);
-        activeTaskDragInfo.current = null;
-        lastTaskDragPreview.current = null;
-        lastHapticColumnId.current = null;
+      if (dropAccepted) {
+        triggerHaptic(() =>
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium),
+        );
       }
-    });
-  }, [
-    stopAutoScrollLoop,
-    taskOverlayOpacity,
-    taskOverlayScale,
-    taskOverlayTilt,
-  ]);
+
+      Animated.parallel([
+        Animated.timing(taskOverlayOpacity, {
+          toValue: 0,
+          duration: 130,
+          useNativeDriver: true,
+        }),
+        Animated.spring(taskOverlayScale, {
+          toValue: 1,
+          tension: 110,
+          friction: 24,
+          useNativeDriver: true,
+        }),
+        Animated.spring(taskOverlayTilt, {
+          toValue: 0,
+          tension: 110,
+          friction: 24,
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setActiveTaskDrag(null);
+          setTaskDragPreview(null);
+          activeTaskDragInfo.current = null;
+          lastTaskDragPreview.current = null;
+          lastHapticColumnId.current = null;
+        }
+      });
+    },
+    [stopAutoScrollLoop, taskOverlayOpacity, taskOverlayScale, taskOverlayTilt],
+  );
 
   const handleTaskTouchStart = useCallback(() => {
     setIsTouchingTask(true);
@@ -1023,9 +1017,7 @@ function KanbanBoard() {
                 onTaskTouchStart={handleTaskTouchStart}
                 onTaskTouchEnd={handleTaskTouchEnd}
                 onColumnLayout={handleColumnLayout}
-                onColumnScrollMetricsChange={
-                  handleColumnScrollMetricsChange
-                }
+                onColumnScrollMetricsChange={handleColumnScrollMetricsChange}
                 onColumnScrollYChange={handleColumnScrollYChange}
                 onColumnTaskLayoutsChange={handleColumnTaskLayoutsChange}
                 editingTaskId={editingTaskId}
@@ -1064,7 +1056,7 @@ function KanbanBoard() {
                   {
                     rotateZ: taskOverlayTilt.interpolate({
                       inputRange: [-160, 0, 160],
-                      outputRange: ["-3deg", "0deg", "3deg"],
+                      outputRange: ["-1deg", "0deg", "1deg"],
                       extrapolate: "clamp",
                     }),
                   },
