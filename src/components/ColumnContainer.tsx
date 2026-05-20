@@ -11,11 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Reanimated, {
-  FadeIn,
-  FadeOut,
-  LinearTransition,
-} from "react-native-reanimated";
+import Reanimated, { FadeOut, LinearTransition } from "react-native-reanimated";
 import TrashIcon from "../icons/TrashIcon";
 import type {
   Column,
@@ -27,13 +23,8 @@ import type {
 } from "../types";
 import TaskCard from "./TaskCard";
 
-const TASK_ITEM_TRANSITION = LinearTransition.springify()
-  .damping(26)
-  .stiffness(140);
-
-const TASK_PREVIEW_TRANSITION = LinearTransition.springify()
-  .damping(28)
-  .stiffness(150);
+const TASK_ITEM_TRANSITION = LinearTransition.duration(120);
+const TASK_PREVIEW_TRANSITION = LinearTransition.duration(100);
 
 interface ColumnContainerProps {
   column: Column;
@@ -259,7 +250,7 @@ function ColumnContainer({
         key={task.id}
         collapsable={false}
         entering={undefined}
-        exiting={isDragPreviewSource ? undefined : FadeOut.duration(60)}
+        exiting={undefined}
         layout={TASK_ITEM_TRANSITION}
         onLayout={
           isDragPreviewSource

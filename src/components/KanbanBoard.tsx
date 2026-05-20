@@ -904,29 +904,27 @@ function KanbanBoard() {
       Animated.parallel([
         Animated.timing(taskOverlayOpacity, {
           toValue: 0,
-          duration: 130,
+          duration: 60,
           useNativeDriver: true,
         }),
         Animated.spring(taskOverlayScale, {
           toValue: 1,
-          tension: 110,
-          friction: 24,
+          tension: 100,
+          friction: 26,
           useNativeDriver: true,
         }),
         Animated.spring(taskOverlayTilt, {
           toValue: 0,
-          tension: 110,
-          friction: 24,
+          tension: 100,
+          friction: 26,
           useNativeDriver: true,
         }),
-      ]).start(({ finished }) => {
-        if (finished) {
-          setActiveTaskDrag(null);
-          setTaskDragPreview(null);
-          activeTaskDragInfo.current = null;
-          lastTaskDragPreview.current = null;
-          lastHapticColumnId.current = null;
-        }
+      ]).start(() => {
+        setActiveTaskDrag(null);
+        setTaskDragPreview(null);
+        activeTaskDragInfo.current = null;
+        lastTaskDragPreview.current = null;
+        lastHapticColumnId.current = null;
       });
     },
     [stopAutoScrollLoop, taskOverlayOpacity, taskOverlayScale, taskOverlayTilt],
