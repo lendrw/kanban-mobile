@@ -5,10 +5,8 @@ import {
   type LayoutChangeEvent,
   PanResponder,
   type PanResponderGestureState,
-  Pressable,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -74,11 +72,10 @@ class TaskGestureState {
 interface TaskCardProps {
   task: Task;
   deleteTask: (id: Task["id"]) => void;
-  updateTask: (id: Task["id"], content: Task["content"]) => void;
   moveTask: (id: Id, deltaX: number, deltaY: number) => void;
-  isEditing: boolean;
   isOverlay?: boolean;
   isDragPreviewSource?: boolean;
+  onOpenTaskDetails?: (id: Task["id"]) => void;
   onTaskDragStart?: (task: Task, layout: TaskDragLayout) => void;
   onTaskDragMove?: (
     deltaX: number,
@@ -89,23 +86,20 @@ interface TaskCardProps {
   onTaskDragEnd?: (dropAccepted: boolean) => void;
   onTaskTouchStart?: () => void;
   onTaskTouchEnd?: () => void;
-  setEditingTaskId: (id: Id | null) => void;
 }
 
 function TaskCard({
   task,
   deleteTask,
-  updateTask,
   moveTask,
-  isEditing,
   isOverlay = false,
   isDragPreviewSource = false,
+  onOpenTaskDetails,
   onTaskDragStart,
   onTaskDragMove,
   onTaskDragEnd,
   onTaskTouchStart,
   onTaskTouchEnd,
-  setEditingTaskId,
 }: TaskCardProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [taskGestureState] = useState(() => new TaskGestureState());
@@ -151,7 +145,7 @@ function TaskCard({
       gesture?: PanResponderGestureState,
       localOffset = { x: 0, y: 0 },
     ) => {
-      if (isOverlay || isEditing || taskGestureState.isDragging()) {
+      if (isOverlay || taskGestureState.isDragging()) {
         return;
       }
 
@@ -163,7 +157,6 @@ function TaskCard({
     },
     [
       getTaskDragLayout,
-      isEditing,
       isOverlay,
       onTaskDragStart,
       onTaskTouchStart,
@@ -197,7 +190,7 @@ function TaskCard({
       _event: GestureResponderEvent,
       gesture: PanResponderGestureState,
     ) {
-      if (isOverlay || isEditing) {
+      if (isOverlay) {
         return false;
       }
 
@@ -247,7 +240,6 @@ function TaskCard({
     });
   }, [
     finishTaskDrag,
-    isEditing,
     isOverlay,
     onTaskDragMove,
     startTaskDrag,
@@ -296,31 +288,6 @@ function TaskCard({
     );
   }
 
-  if (isEditing) {
-    return (
-      <Pressable
-        style={styles.card}
-        onPress={(event) => event.stopPropagation()}
-      >
-        <TextInput
-          value={task.content}
-          autoFocus
-          multiline
-          placeholder="Task content here"
-          placeholderTextColor="#8b949e"
-          onChangeText={(content) => updateTask(task.id, content)}
-          onBlur={() => {
-            if (!isDragging) {
-              setEditingTaskId(null);
-            }
-          }}
-          style={styles.input}
-          selectionColor="#f43f5e"
-        />
-      </Pressable>
-    );
-  }
-
   return (
     <Animated.View
       onLayout={handleCardLayout}
@@ -337,7 +304,7 @@ function TaskCard({
     >
       <TouchableOpacity
         activeOpacity={0.9}
-        accessibilityLabel={`Edit task ${task.content}`}
+        accessibilityLabel={`Open card details for ${task.content}`}
         accessibilityRole="button"
         delayLongPress={DRAG_ACTIVATION_DELAY_MS}
         onLongPress={(event) => {
@@ -354,7 +321,7 @@ function TaskCard({
           }
 
           event.stopPropagation();
-          setEditingTaskId(task.id);
+          onOpenTaskDetails?.(task.id);
         }}
         style={styles.contentButton}
       >
@@ -416,12 +383,6 @@ const styles = StyleSheet.create({
   content: {
     color: "#ffffff",
     fontSize: 15,
-  },
-  input: {
-    flex: 1,
-    minHeight: 80,
-    color: "#ffffff",
-    textAlignVertical: "top",
   },
   deleteButton: {
     width: 30,

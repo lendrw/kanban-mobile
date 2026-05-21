@@ -20,6 +20,7 @@ import type {
   TaskDragLayout,
   TaskListItemLayout,
 } from "../types";
+import CardDetailsScreen from "./CardDetailsScreen";
 import ColumnContainer from "./ColumnContainer";
 import TaskCard from "./TaskCard";
 
@@ -79,7 +80,8 @@ function isPersistedTask(value: unknown): value is Task {
     isRecord(value) &&
     isId(value.id) &&
     isId(value.columnId) &&
-    typeof value.content === "string"
+    typeof value.content === "string" &&
+    (value.description === undefined || typeof value.description === "string")
   );
 }
 
@@ -513,8 +515,8 @@ function KanbanBoard() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [hasLoadedStoredBoard, setHasLoadedStoredBoard] = useState(false);
-  const [editingTaskId, setEditingTaskId] = useState<Id | null>(null);
   const [addTaskDraft, setAddTaskDraft] = useState<AddTaskDraft | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<Id | null>(null);
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragState | null>(
     null,
   );
@@ -602,13 +604,22 @@ function KanbanBoard() {
       }, {}),
     [columns, tasks],
   );
+  const selectedTask = useMemo(
+    () => tasks.find((task) => task.id === selectedTaskId) ?? null,
+    [selectedTaskId, tasks],
+  );
+
+  useEffect(() => {
+    if (selectedTaskId !== null && selectedTask === null) {
+      setSelectedTaskId(null);
+    }
+  }, [selectedTask, selectedTaskId]);
 
   function generateId() {
     return Math.random().toString(36).substring(2, 10);
   }
 
   function createColumn() {
-    setEditingTaskId(null);
     setAddTaskDraft(null);
 
     setColumns((currentColumns) => [
@@ -621,7 +632,6 @@ function KanbanBoard() {
   }
 
   function deleteColumn(id: Id) {
-    setEditingTaskId(null);
     setAddTaskDraft((currentDraft) =>
       currentDraft?.columnId === id ? null : currentDraft,
     );
@@ -647,7 +657,7 @@ function KanbanBoard() {
   }
 
   function startAddingTask(columnId: Id) {
-    setEditingTaskId(null);
+    setSelectedTaskId(null);
     setAddTaskDraft({ columnId, title: "" });
   }
 
@@ -683,20 +693,41 @@ function KanbanBoard() {
   }
 
   function deleteTask(id: Id) {
-    if (editingTaskId === id) {
-      setEditingTaskId(null);
-    }
-
+    setSelectedTaskId((currentId) => (currentId === id ? null : currentId));
     setTasks((currentTasks) => currentTasks.filter((task) => task.id !== id));
   }
 
-  function updateTask(id: Id, content: Task["content"]) {
+  function openTaskDetails(id: Id) {
+    setAddTaskDraft(null);
+    setSelectedTaskId(id);
+  }
+
+  function closeTaskDetails() {
+    setSelectedTaskId(null);
+  }
+
+  function updateTaskTitle(id: Id, content: Task["content"]) {
     setTasks((currentTasks) =>
       currentTasks.map((task) => {
         if (task.id !== id) return task;
         return {
           ...task,
           content,
+        };
+      }),
+    );
+  }
+
+  function updateTaskDescription(
+    id: Id,
+    description: NonNullable<Task["description"]>,
+  ) {
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => {
+        if (task.id !== id) return task;
+        return {
+          ...task,
+          description,
         };
       }),
     );
@@ -950,7 +981,7 @@ function KanbanBoard() {
 
   const handleTaskDragStart = useCallback(
     (task: Task, layout: TaskDragLayout) => {
-      setEditingTaskId(null);
+      setSelectedTaskId(null);
       stopAutoScrollLoop();
       latestDragPointer.current = null;
       lastHapticColumnId.current = task.columnId;
@@ -1102,6 +1133,21 @@ function KanbanBoard() {
     [boardDragMetrics],
   );
 
+  if (selectedTask) {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <CardDetailsScreen
+          task={selectedTask}
+          onClose={closeTaskDetails}
+          onTitleChange={(title) => updateTaskTitle(selectedTask.id, title)}
+          onDescriptionChange={(description) =>
+            updateTaskDescription(selectedTask.id, description)
+          }
+        />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.screen}>
       {addTaskDraft && (
@@ -1141,7 +1187,6 @@ function KanbanBoard() {
           const { y, height } = event.nativeEvent.layout;
           boardDragMetrics.setBoardVerticalViewportLayout(y, height);
         }}
-        onScrollBeginDrag={() => setEditingTaskId(null)}
         onScroll={(event) => {
           boardDragMetrics.setBoardScrollY(event.nativeEvent.contentOffset.y);
         }}
@@ -1162,7 +1207,6 @@ function KanbanBoard() {
             const { x, width } = event.nativeEvent.layout;
             boardDragMetrics.setBoardViewportLayout(x, width);
           }}
-          onScrollBeginDrag={() => setEditingTaskId(null)}
           onScroll={(event) => {
             boardDragMetrics.setBoardScrollX(event.nativeEvent.contentOffset.x);
           }}
@@ -1188,13 +1232,13 @@ function KanbanBoard() {
                   updateColumn={updateColumn}
                   startAddingTask={startAddingTask}
                   deleteTask={deleteTask}
-                  updateTask={updateTask}
                   addTaskTitle={
                     addTaskDraft?.columnId === col.id ? addTaskDraft.title : ""
                   }
                   isAddingTask={addTaskDraft?.columnId === col.id}
                   onAddTaskTitleChange={updateAddTaskTitle}
                   onSubmitAddingTask={confirmAddingTask}
+                  onOpenTaskDetails={openTaskDetails}
                   moveColumn={moveColumn}
                   moveTask={moveTask}
                   onTaskDragStart={handleTaskDragStart}
@@ -1206,8 +1250,6 @@ function KanbanBoard() {
                   onColumnScrollMetricsChange={handleColumnScrollMetricsChange}
                   onColumnScrollYChange={handleColumnScrollYChange}
                   onColumnTaskLayoutsChange={handleColumnTaskLayoutsChange}
-                  editingTaskId={editingTaskId}
-                  setEditingTaskId={setEditingTaskId}
                   taskDragPreview={isDropTarget ? taskDragPreview : null}
                   draggingTaskId={activeTaskDrag?.task.id ?? null}
                   isTaskDragActive={activeTaskDrag !== null}
@@ -1255,11 +1297,8 @@ function KanbanBoard() {
             <TaskCard
               task={activeTaskDrag.task}
               deleteTask={deleteTask}
-              updateTask={updateTask}
               moveTask={moveTask}
-              isEditing={false}
               isOverlay
-              setEditingTaskId={setEditingTaskId}
             />
           </Animated.View>
         )}

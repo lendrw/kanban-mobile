@@ -31,11 +31,11 @@ interface ColumnContainerProps {
   updateColumn: (id: Column["id"], title: Column["title"]) => void;
   startAddingTask: (columnId: Column["id"]) => void;
   deleteTask: (id: Task["id"]) => void;
-  updateTask: (id: Task["id"], content: Task["content"]) => void;
   addTaskTitle: string;
   isAddingTask: boolean;
   onAddTaskTitleChange: (title: string) => void;
   onSubmitAddingTask: () => void;
+  onOpenTaskDetails: (id: Task["id"]) => void;
   moveColumn: (id: Id, deltaX: number) => void;
   moveTask: (id: Id, deltaX: number, deltaY: number) => void;
   onTaskDragStart: (task: Task, layout: TaskDragLayout) => void;
@@ -52,8 +52,6 @@ interface ColumnContainerProps {
   onColumnScrollMetricsChange: (id: Id, metrics: ColumnScrollMetrics) => void;
   onColumnScrollYChange: (id: Id, scrollY: number) => void;
   onColumnTaskLayoutsChange: (id: Id, layouts: TaskListItemLayout[]) => void;
-  editingTaskId: Id | null;
-  setEditingTaskId: (id: Id | null) => void;
   taskDragPreview: {
     taskId: Id;
     targetIndex: number;
@@ -71,11 +69,11 @@ function ColumnContainer({
   updateColumn,
   startAddingTask,
   deleteTask,
-  updateTask,
   addTaskTitle,
   isAddingTask,
   onAddTaskTitleChange,
   onSubmitAddingTask,
+  onOpenTaskDetails,
   moveColumn,
   moveTask,
   onTaskDragStart,
@@ -87,8 +85,6 @@ function ColumnContainer({
   onColumnScrollMetricsChange,
   onColumnScrollYChange,
   onColumnTaskLayoutsChange,
-  editingTaskId,
-  setEditingTaskId,
   taskDragPreview,
   draggingTaskId,
   isTaskDragActive,
@@ -233,16 +229,14 @@ function ColumnContainer({
       <TaskCard
         task={task}
         deleteTask={deleteTask}
-        updateTask={updateTask}
         moveTask={moveTask}
+        onOpenTaskDetails={onOpenTaskDetails}
         onTaskDragStart={onTaskDragStart}
         onTaskDragMove={onTaskDragMove}
         onTaskDragEnd={onTaskDragEnd}
         onTaskTouchStart={onTaskTouchStart}
         onTaskTouchEnd={onTaskTouchEnd}
         isDragPreviewSource={isDragPreviewSource}
-        isEditing={editingTaskId === task.id}
-        setEditingTaskId={setEditingTaskId}
       />
     );
 
@@ -310,7 +304,6 @@ function ColumnContainer({
         accessibilityLabel={`Edit column ${column.title}`}
         accessibilityRole="button"
         onPress={() => {
-          setEditingTaskId(null);
           setEditMode(true);
         }}
         style={styles.header}
@@ -339,7 +332,6 @@ function ColumnContainer({
           accessibilityRole="button"
           onPress={(event) => {
             event.stopPropagation();
-            setEditingTaskId(null);
             deleteColumn(column.id);
           }}
           style={styles.iconButton}
@@ -385,7 +377,6 @@ function ColumnContainer({
           accessibilityRole="button"
           style={styles.footer}
           onPress={() => {
-            setEditingTaskId(null);
             startAddingTask(column.id);
           }}
         >

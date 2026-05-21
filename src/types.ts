@@ -9,6 +9,7 @@ export type Task = {
   id: Id;
   columnId: Column["id"];
   content: string;
+  description?: string;
 };
 
 export type TaskDragLayout = {
