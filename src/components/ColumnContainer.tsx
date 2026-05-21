@@ -29,9 +29,13 @@ interface ColumnContainerProps {
   column: Column;
   deleteColumn: (id: Column["id"]) => void;
   updateColumn: (id: Column["id"], title: Column["title"]) => void;
-  createTask: (columnId: Column["id"]) => void;
+  startAddingTask: (columnId: Column["id"]) => void;
   deleteTask: (id: Task["id"]) => void;
   updateTask: (id: Task["id"], content: Task["content"]) => void;
+  addTaskTitle: string;
+  isAddingTask: boolean;
+  onAddTaskTitleChange: (title: string) => void;
+  onSubmitAddingTask: () => void;
   moveColumn: (id: Id, deltaX: number) => void;
   moveTask: (id: Id, deltaX: number, deltaY: number) => void;
   onTaskDragStart: (task: Task, layout: TaskDragLayout) => void;
@@ -65,9 +69,13 @@ function ColumnContainer({
   column,
   deleteColumn,
   updateColumn,
-  createTask,
+  startAddingTask,
   deleteTask,
   updateTask,
+  addTaskTitle,
+  isAddingTask,
+  onAddTaskTitleChange,
+  onSubmitAddingTask,
   moveColumn,
   moveTask,
   onTaskDragStart,
@@ -355,21 +363,36 @@ function ColumnContainer({
         {renderedTaskItems.items}
         {taskDropPreviewIndex === renderedTaskItems.visibleTaskIndex &&
           renderTaskDropPreview()}
+        {isAddingTask && (
+          <TextInput
+            value={addTaskTitle}
+            autoFocus
+            placeholder="Card title"
+            placeholderTextColor="#8b949e"
+            onChangeText={onAddTaskTitleChange}
+            onSubmitEditing={onSubmitAddingTask}
+            returnKeyType="done"
+            style={styles.addTaskInput}
+            selectionColor="#f43f5e"
+          />
+        )}
       </View>
 
-      <TouchableOpacity
-        activeOpacity={0.8}
-        accessibilityLabel={`Add task to ${column.title}`}
-        accessibilityRole="button"
-        style={styles.footer}
-        onPress={() => {
-          setEditingTaskId(null);
-          createTask(column.id);
-        }}
-      >
-        <Text style={styles.footerIcon}>+</Text>
-        <Text style={styles.footerText}>Add Task</Text>
-      </TouchableOpacity>
+      {!isAddingTask && (
+        <TouchableOpacity
+          activeOpacity={0.8}
+          accessibilityLabel={`Add task to ${column.title}`}
+          accessibilityRole="button"
+          style={styles.footer}
+          onPress={() => {
+            setEditingTaskId(null);
+            startAddingTask(column.id);
+          }}
+        >
+          <Text style={styles.footerIcon}>+</Text>
+          <Text style={styles.footerText}>Add Task</Text>
+        </TouchableOpacity>
+      )}
     </Animated.View>
   );
 }
@@ -411,6 +434,17 @@ const styles = StyleSheet.create({
   tasks: {
     gap: 12,
     padding: 8,
+  },
+
+  addTaskInput: {
+    minHeight: 50,
+    color: "#ffffff",
+    fontSize: 15,
+    padding: 10,
+    borderWidth: 2,
+    borderColor: "#30363d",
+    borderRadius: 12,
+    backgroundColor: "#0d1117",
   },
 
   taskDropPreview: {

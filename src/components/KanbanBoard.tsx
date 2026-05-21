@@ -10,6 +10,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import CheckIcon from "../icons/CheckIcon";
+import CloseIcon from "../icons/CloseIcon";
 import type {
   Column,
   ColumnScrollMetrics,
@@ -48,6 +50,11 @@ type TaskDragPreview = {
   targetColumnId: Id;
   targetIndex: number;
   placeholderHeight: number;
+};
+
+type AddTaskDraft = {
+  columnId: Id;
+  title: string;
 };
 
 type ColumnLayout = {
@@ -507,6 +514,7 @@ function KanbanBoard() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [hasLoadedStoredBoard, setHasLoadedStoredBoard] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<Id | null>(null);
+  const [addTaskDraft, setAddTaskDraft] = useState<AddTaskDraft | null>(null);
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragState | null>(
     null,
   );
@@ -601,6 +609,7 @@ function KanbanBoard() {
 
   function createColumn() {
     setEditingTaskId(null);
+    setAddTaskDraft(null);
 
     setColumns((currentColumns) => [
       ...currentColumns,
@@ -613,6 +622,9 @@ function KanbanBoard() {
 
   function deleteColumn(id: Id) {
     setEditingTaskId(null);
+    setAddTaskDraft((currentDraft) =>
+      currentDraft?.columnId === id ? null : currentDraft,
+    );
 
     setColumns((currentColumns) =>
       currentColumns.filter((column) => column.id !== id),
@@ -634,17 +646,40 @@ function KanbanBoard() {
     );
   }
 
-  function createTask(columnId: Id) {
+  function startAddingTask(columnId: Id) {
     setEditingTaskId(null);
+    setAddTaskDraft({ columnId, title: "" });
+  }
+
+  function updateAddTaskTitle(title: string) {
+    setAddTaskDraft((currentDraft) => {
+      if (!currentDraft) return currentDraft;
+
+      return {
+        ...currentDraft,
+        title,
+      };
+    });
+  }
+
+  function cancelAddingTask() {
+    setAddTaskDraft(null);
+  }
+
+  function confirmAddingTask() {
+    const title = addTaskDraft?.title.trim();
+
+    if (!addTaskDraft || !title) return;
 
     setTasks((currentTasks) => [
       ...currentTasks,
       {
         id: generateId(),
-        columnId,
-        content: `Task ${currentTasks.length + 1}`,
+        columnId: addTaskDraft.columnId,
+        content: title,
       },
     ]);
+    setAddTaskDraft(null);
   }
 
   function deleteTask(id: Id) {
@@ -666,6 +701,9 @@ function KanbanBoard() {
       }),
     );
   }
+
+  const canConfirmAddTask =
+    addTaskDraft !== null && addTaskDraft.title.trim().length > 0;
 
   const moveColumn = useCallback((id: Id, deltaX: number) => {
     setColumns((currentColumns) => {
@@ -1066,6 +1104,30 @@ function KanbanBoard() {
 
   return (
     <SafeAreaView style={styles.screen}>
+      {addTaskDraft && (
+        <View style={styles.addTaskBar}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            accessibilityLabel="Cancel adding card"
+            accessibilityRole="button"
+            onPress={cancelAddingTask}
+            style={styles.addTaskBarButton}
+          >
+            <CloseIcon />
+          </TouchableOpacity>
+          <Text style={styles.addTaskBarTitle}>Add a card...</Text>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            accessibilityLabel="Confirm adding card"
+            accessibilityRole="button"
+            disabled={!canConfirmAddTask}
+            onPress={confirmAddingTask}
+            style={styles.addTaskBarButton}
+          >
+            <CheckIcon color={canConfirmAddTask ? "#ffffff" : "#6b7280"} />
+          </TouchableOpacity>
+        </View>
+      )}
       <ScrollView
         ref={boardVerticalScrollRef}
         style={styles.boardVerticalScroll}
@@ -1124,9 +1186,15 @@ function KanbanBoard() {
                   column={col}
                   deleteColumn={deleteColumn}
                   updateColumn={updateColumn}
-                  createTask={createTask}
+                  startAddingTask={startAddingTask}
                   deleteTask={deleteTask}
                   updateTask={updateTask}
+                  addTaskTitle={
+                    addTaskDraft?.columnId === col.id ? addTaskDraft.title : ""
+                  }
+                  isAddingTask={addTaskDraft?.columnId === col.id}
+                  onAddTaskTitleChange={updateAddTaskTitle}
+                  onSubmitAddingTask={confirmAddingTask}
                   moveColumn={moveColumn}
                   moveTask={moveTask}
                   onTaskDragStart={handleTaskDragStart}
@@ -1205,6 +1273,27 @@ const styles = StyleSheet.create({
     flex: 1,
     position: "relative",
     backgroundColor: "#000000",
+  },
+  addTaskBar: {
+    height: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#161c22",
+    backgroundColor: "#0d1117",
+  },
+  addTaskBarButton: {
+    width: 56,
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addTaskBarTitle: {
+    flex: 1,
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+    textAlign: "center",
   },
   boardVerticalScroll: {
     flex: 1,
