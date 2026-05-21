@@ -107,8 +107,12 @@ function parsePersistedBoardState(
 
 class BoardDragMetrics {
   private boardScrollX = 0;
+  private boardScrollY = 0;
   private boardViewportX = 0;
+  private boardViewportY = 0;
   private boardViewportWidth = 0;
+  private boardViewportHeight = 0;
+  private boardContentHeight = 0;
   private columnsContainerX = 0;
   private columnLayouts = new Map<string, ColumnLayout>();
   private columnScrollMetrics = new Map<string, ColumnScrollMetrics>();
@@ -118,13 +122,37 @@ class BoardDragMetrics {
     this.boardScrollX = scrollX;
   }
 
+  setBoardScrollY(scrollY: number) {
+    const deltaY = scrollY - this.boardScrollY;
+    this.boardScrollY = scrollY;
+
+    if (deltaY === 0) return;
+
+    this.columnScrollMetrics.forEach((metrics) => {
+      metrics.windowY -= deltaY;
+    });
+  }
+
   setBoardViewportLayout(x: number, width: number) {
     this.boardViewportX = x;
     this.boardViewportWidth = width;
   }
 
+  setBoardVerticalViewportLayout(y: number, height: number) {
+    this.boardViewportY = y;
+    this.boardViewportHeight = height;
+  }
+
+  setBoardContentHeight(height: number) {
+    this.boardContentHeight = height;
+  }
+
   getBoardScrollX() {
     return this.boardScrollX;
+  }
+
+  getBoardScrollY() {
+    return this.boardScrollY;
   }
 
   setColumnsContainerX(x: number) {
@@ -209,6 +237,58 @@ class BoardDragMetrics {
       const speed = Math.min(MAX_SCROLL, MIN_SCROLL + distance * 0.25);
 
       return this.boardScrollX + speed;
+    }
+
+    return null;
+  }
+
+  getBoardVerticalAutoScrollTarget(pointerY: number) {
+    if (this.boardViewportHeight <= 0) return null;
+
+    const maxScrollY = Math.max(
+      0,
+      this.boardContentHeight - this.boardViewportHeight,
+    );
+    if (maxScrollY <= 0) return null;
+
+    const topEdge = this.boardViewportY + VERTICAL_AUTO_SCROLL_EDGE_SIZE;
+    const bottomEdge =
+      this.boardViewportY +
+      this.boardViewportHeight -
+      VERTICAL_AUTO_SCROLL_EDGE_SIZE;
+
+    if (pointerY < topEdge) {
+      const intensity = clamp(
+        (topEdge - pointerY) / VERTICAL_AUTO_SCROLL_EDGE_SIZE,
+        0,
+        1,
+      );
+      return clamp(
+        this.boardScrollY -
+          (VERTICAL_AUTO_SCROLL_MIN_STEP +
+            (VERTICAL_AUTO_SCROLL_MAX_STEP - VERTICAL_AUTO_SCROLL_MIN_STEP) *
+              intensity *
+              intensity),
+        0,
+        maxScrollY,
+      );
+    }
+
+    if (pointerY > bottomEdge) {
+      const intensity = clamp(
+        (pointerY - bottomEdge) / VERTICAL_AUTO_SCROLL_EDGE_SIZE,
+        0,
+        1,
+      );
+      return clamp(
+        this.boardScrollY +
+          (VERTICAL_AUTO_SCROLL_MIN_STEP +
+            (VERTICAL_AUTO_SCROLL_MAX_STEP - VERTICAL_AUTO_SCROLL_MIN_STEP) *
+              intensity *
+              intensity),
+        0,
+        maxScrollY,
+      );
     }
 
     return null;
@@ -453,6 +533,7 @@ function KanbanBoard() {
   > | null>(null);
   const lastHapticColumnId = useRef<Id | null>(null);
   const lastColumnHapticAt = useRef(0);
+  const boardVerticalScrollRef = useRef<ScrollView | null>(null);
   const boardScrollRef = useRef<ScrollView | null>(null);
   const [boardDragMetrics] = useState(() => new BoardDragMetrics());
   const [taskOverlayPosition] = useState(() => new Animated.ValueXY());
@@ -715,6 +796,23 @@ function KanbanBoard() {
         didAutoScroll = true;
       }
 
+      const verticalBoardAutoScrollTarget =
+        boardDragMetrics.getBoardVerticalAutoScrollTarget(pointerY);
+
+      if (
+        verticalBoardAutoScrollTarget !== null &&
+        verticalBoardAutoScrollTarget !== boardDragMetrics.getBoardScrollY()
+      ) {
+        boardDragMetrics.setBoardScrollY(verticalBoardAutoScrollTarget);
+
+        boardVerticalScrollRef.current?.scrollTo({
+          y: verticalBoardAutoScrollTarget,
+          animated: false,
+        });
+
+        didAutoScroll = true;
+      }
+
       const effectiveDeltaX =
         deltaX + boardDragMetrics.getBoardScrollX() - currentDrag.startScrollX;
 
@@ -969,76 +1067,99 @@ function KanbanBoard() {
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView
-        ref={boardScrollRef}
-        horizontal
-        style={styles.boardScroll}
-        scrollEnabled={!isTouchingTask}
-        directionalLockEnabled
-        contentContainerStyle={styles.board}
+        ref={boardVerticalScrollRef}
+        style={styles.boardVerticalScroll}
+        contentContainerStyle={styles.boardVerticalContent}
         keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        onContentSizeChange={(_width, height) => {
+          boardDragMetrics.setBoardContentHeight(height);
+        }}
         onLayout={(event) => {
-          const { x, width } = event.nativeEvent.layout;
-          boardDragMetrics.setBoardViewportLayout(x, width);
+          const { y, height } = event.nativeEvent.layout;
+          boardDragMetrics.setBoardVerticalViewportLayout(y, height);
         }}
         onScrollBeginDrag={() => setEditingTaskId(null)}
         onScroll={(event) => {
-          boardDragMetrics.setBoardScrollX(event.nativeEvent.contentOffset.x);
+          boardDragMetrics.setBoardScrollY(event.nativeEvent.contentOffset.y);
         }}
         scrollEventThrottle={16}
-        showsHorizontalScrollIndicator={false}
+        scrollEnabled={!isTouchingTask}
+        showsVerticalScrollIndicator={false}
       >
-        <View
-          style={styles.columns}
+        <ScrollView
+          ref={boardScrollRef}
+          horizontal
+          style={styles.boardScroll}
+          scrollEnabled={!isTouchingTask}
+          directionalLockEnabled
+          nestedScrollEnabled
+          contentContainerStyle={styles.board}
+          keyboardShouldPersistTaps="handled"
           onLayout={(event) => {
-            boardDragMetrics.setColumnsContainerX(event.nativeEvent.layout.x);
+            const { x, width } = event.nativeEvent.layout;
+            boardDragMetrics.setBoardViewportLayout(x, width);
           }}
+          onScrollBeginDrag={() => setEditingTaskId(null)}
+          onScroll={(event) => {
+            boardDragMetrics.setBoardScrollX(event.nativeEvent.contentOffset.x);
+          }}
+          scrollEventThrottle={16}
+          showsHorizontalScrollIndicator={false}
         >
-          {columns.map((col) => {
-            const isDropTarget =
-              activeTaskDrag !== null &&
-              taskDragPreview?.targetColumnId === col.id;
-
-            return (
-              <ColumnContainer
-                key={col.id}
-                column={col}
-                deleteColumn={deleteColumn}
-                updateColumn={updateColumn}
-                createTask={createTask}
-                deleteTask={deleteTask}
-                updateTask={updateTask}
-                moveColumn={moveColumn}
-                moveTask={moveTask}
-                onTaskDragStart={handleTaskDragStart}
-                onTaskDragMove={handleTaskDragMove}
-                onTaskDragEnd={handleTaskDragEnd}
-                onTaskTouchStart={handleTaskTouchStart}
-                onTaskTouchEnd={handleTaskTouchEnd}
-                onColumnLayout={handleColumnLayout}
-                onColumnScrollMetricsChange={handleColumnScrollMetricsChange}
-                onColumnScrollYChange={handleColumnScrollYChange}
-                onColumnTaskLayoutsChange={handleColumnTaskLayoutsChange}
-                editingTaskId={editingTaskId}
-                setEditingTaskId={setEditingTaskId}
-                taskDragPreview={isDropTarget ? taskDragPreview : null}
-                draggingTaskId={activeTaskDrag?.task.id ?? null}
-                isTaskDragActive={activeTaskDrag !== null}
-                isDropTarget={isDropTarget}
-                tasks={tasksByColumn[String(col.id)] ?? []}
-              />
-            );
-          })}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            accessibilityLabel="Add column"
-            accessibilityRole="button"
-            onPress={createColumn}
-            style={styles.addColumnButton}
+          <View
+            style={styles.columns}
+            onLayout={(event) => {
+              boardDragMetrics.setColumnsContainerX(event.nativeEvent.layout.x);
+            }}
           >
-            <Text style={styles.addIcon}>+</Text>
-            <Text style={styles.addColumnText}>Add Column</Text>
-          </TouchableOpacity>
-        </View>
+            {columns.map((col) => {
+              const isDropTarget =
+                activeTaskDrag !== null &&
+                taskDragPreview?.targetColumnId === col.id;
+
+              return (
+                <ColumnContainer
+                  key={col.id}
+                  column={col}
+                  deleteColumn={deleteColumn}
+                  updateColumn={updateColumn}
+                  createTask={createTask}
+                  deleteTask={deleteTask}
+                  updateTask={updateTask}
+                  moveColumn={moveColumn}
+                  moveTask={moveTask}
+                  onTaskDragStart={handleTaskDragStart}
+                  onTaskDragMove={handleTaskDragMove}
+                  onTaskDragEnd={handleTaskDragEnd}
+                  onTaskTouchStart={handleTaskTouchStart}
+                  onTaskTouchEnd={handleTaskTouchEnd}
+                  onColumnLayout={handleColumnLayout}
+                  onColumnScrollMetricsChange={handleColumnScrollMetricsChange}
+                  onColumnScrollYChange={handleColumnScrollYChange}
+                  onColumnTaskLayoutsChange={handleColumnTaskLayoutsChange}
+                  editingTaskId={editingTaskId}
+                  setEditingTaskId={setEditingTaskId}
+                  taskDragPreview={isDropTarget ? taskDragPreview : null}
+                  draggingTaskId={activeTaskDrag?.task.id ?? null}
+                  isTaskDragActive={activeTaskDrag !== null}
+                  isDropTarget={isDropTarget}
+                  tasks={tasksByColumn[String(col.id)] ?? []}
+                />
+              );
+            })}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              accessibilityLabel="Add column"
+              accessibilityRole="button"
+              onPress={createColumn}
+              style={styles.addColumnButton}
+            >
+              <Text style={styles.addIcon}>+</Text>
+              <Text style={styles.addColumnText}>Add Column</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </ScrollView>
       <View pointerEvents="none" style={styles.dragOverlay}>
         {activeTaskDrag && (
@@ -1085,14 +1206,22 @@ const styles = StyleSheet.create({
     position: "relative",
     backgroundColor: "#000000",
   },
-  boardScroll: {
+  boardVerticalScroll: {
     flex: 1,
+  },
+  boardVerticalContent: {
+    flexGrow: 1,
+  },
+  boardScroll: {
+    flexGrow: 0,
+    width: "100%",
   },
   board: {
     flexGrow: 1,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "flex-start",
+    justifyContent: "flex-start",
     paddingHorizontal: 40,
+    paddingVertical: 40,
   },
   columns: {
     flexDirection: "row",

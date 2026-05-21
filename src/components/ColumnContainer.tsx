@@ -4,7 +4,6 @@ import {
   Animated,
   PanResponder,
   type LayoutChangeEvent,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -91,8 +90,7 @@ function ColumnContainer({
   const [editMode, setEditMode] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [drag] = useState(() => new Animated.ValueXY());
-  const tasksScrollRef = useRef<ScrollView | null>(null);
-  const scrollYRef = useRef(0);
+  const tasksListRef = useRef<View | null>(null);
   const contentHeightRef = useRef(0);
   const viewportHeightRef = useRef(0);
   const taskLayoutsRef = useRef(new Map<string, TaskListItemLayout>());
@@ -114,13 +112,10 @@ function ColumnContainer({
   }, [column.id, onColumnTaskLayoutsChange, visibleTasks]);
 
   const publishScrollMetrics = useCallback(() => {
-    const scrollView = tasksScrollRef.current;
-    if (!scrollView) return;
+    const tasksList = tasksListRef.current;
+    if (!tasksList) return;
 
-    const nativeScrollRef = scrollView.getNativeScrollRef();
-    if (!nativeScrollRef) return;
-
-    nativeScrollRef.measureInWindow(
+    tasksList.measureInWindow(
       (_x: number, windowY: number, _width: number, height: number) => {
         const viewportHeight = height || viewportHeightRef.current;
         viewportHeightRef.current = viewportHeight;
@@ -128,12 +123,10 @@ function ColumnContainer({
         onColumnScrollMetricsChange(column.id, {
           windowY,
           viewportHeight,
-          contentHeight: contentHeightRef.current,
-          scrollY: scrollYRef.current,
-          scrollTo: (y) => {
-            scrollYRef.current = y;
-            onColumnScrollYChange(column.id, y);
-            scrollView.scrollTo({ y, animated: false });
+          contentHeight: contentHeightRef.current || viewportHeight,
+          scrollY: 0,
+          scrollTo: () => {
+            onColumnScrollYChange(column.id, 0);
           },
         });
       },
@@ -347,33 +340,22 @@ function ColumnContainer({
         </TouchableOpacity>
       </TouchableOpacity>
 
-      <ScrollView
-        ref={tasksScrollRef}
+      <View
+        ref={tasksListRef}
         collapsable={false}
         style={styles.tasks}
-        contentContainerStyle={styles.tasksContent}
-        keyboardShouldPersistTaps="handled"
-        scrollEnabled={!isTaskDragActive}
-        showsVerticalScrollIndicator={false}
-        onContentSizeChange={(_width, height) => {
-          contentHeightRef.current = height;
-          publishScrollMetrics();
-        }}
         onLayout={(event) => {
-          viewportHeightRef.current = event.nativeEvent.layout.height;
+          const height = event.nativeEvent.layout.height;
+          contentHeightRef.current = height;
+          viewportHeightRef.current = height;
+          onColumnScrollYChange(column.id, 0);
           publishScrollMetrics();
         }}
-        onScroll={(event) => {
-          const scrollY = event.nativeEvent.contentOffset.y;
-          scrollYRef.current = scrollY;
-          onColumnScrollYChange(column.id, scrollY);
-        }}
-        scrollEventThrottle={16}
       >
         {renderedTaskItems.items}
         {taskDropPreviewIndex === renderedTaskItems.visibleTaskIndex &&
           renderTaskDropPreview()}
-      </ScrollView>
+      </View>
 
       <TouchableOpacity
         activeOpacity={0.8}
@@ -395,7 +377,6 @@ function ColumnContainer({
 const styles = StyleSheet.create({
   column: {
     width: 250,
-    maxHeight: 500,
     backgroundColor: "#161c22",
     borderWidth: 2,
     borderColor: "transparent",
@@ -428,12 +409,7 @@ const styles = StyleSheet.create({
   },
 
   tasks: {
-    flexGrow: 0,
-    flexShrink: 1,
-  },
-
-  tasksContent: {
-    gap: 16,
+    gap: 12,
     padding: 8,
   },
 

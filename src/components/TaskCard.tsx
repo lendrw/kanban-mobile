@@ -17,7 +17,7 @@ import type { Id, Task, TaskDragLayout } from "../types";
 
 const DRAG_ACTIVATION_DELAY_MS = 180;
 const DRAG_ACTIVATION_DISTANCE = 8;
-const CARD_PADDING = 10;
+const CARD_PADDING = 8;
 
 class TaskGestureState {
   private ready = false;
@@ -111,90 +111,86 @@ function TaskCard({
   const [taskGestureState] = useState(() => new TaskGestureState());
   const [cardLayout, setCardLayout] = useState({ width: 250, height: 50 });
 
-  const getTaskDragLayout = useCallback((
-    event: GestureResponderEvent,
-    gesture?: PanResponderGestureState,
-    localOffset = { x: 0, y: 0 },
-  ) => {
-    const width = cardLayout.width || 250;
-    const height = cardLayout.height || 50;
-    const { locationX, locationY } = event.nativeEvent;
-    const pageX = Number.isFinite(event.nativeEvent.pageX)
-      ? event.nativeEvent.pageX
-      : gesture?.x0 ?? width / 2;
-    const pageY = Number.isFinite(event.nativeEvent.pageY)
-      ? event.nativeEvent.pageY
-      : gesture?.y0 ?? height / 2;
-    const touchOffsetX = Number.isFinite(locationX)
-      ? locationX + localOffset.x
-      : width / 2;
-    const touchOffsetY = Number.isFinite(locationY)
-      ? locationY + localOffset.y
-      : height / 2;
+  const getTaskDragLayout = useCallback(
+    (
+      event: GestureResponderEvent,
+      gesture?: PanResponderGestureState,
+      localOffset = { x: 0, y: 0 },
+    ) => {
+      const width = cardLayout.width || 250;
+      const height = cardLayout.height || 50;
+      const { locationX, locationY } = event.nativeEvent;
+      const pageX = Number.isFinite(event.nativeEvent.pageX)
+        ? event.nativeEvent.pageX
+        : (gesture?.x0 ?? width / 2);
+      const pageY = Number.isFinite(event.nativeEvent.pageY)
+        ? event.nativeEvent.pageY
+        : (gesture?.y0 ?? height / 2);
+      const touchOffsetX = Number.isFinite(locationX)
+        ? locationX + localOffset.x
+        : width / 2;
+      const touchOffsetY = Number.isFinite(locationY)
+        ? locationY + localOffset.y
+        : height / 2;
 
-    return {
-      x: pageX - touchOffsetX,
-      y: pageY - touchOffsetY,
-      width,
-      height,
-      touchOffsetX,
-      touchOffsetY,
-    };
-  }, [cardLayout.height, cardLayout.width]);
+      return {
+        x: pageX - touchOffsetX,
+        y: pageY - touchOffsetY,
+        width,
+        height,
+        touchOffsetX,
+        touchOffsetY,
+      };
+    },
+    [cardLayout.height, cardLayout.width],
+  );
 
-  const startTaskDrag = useCallback((
-    event: GestureResponderEvent,
-    gesture?: PanResponderGestureState,
-    localOffset = { x: 0, y: 0 },
-  ) => {
-    if (isOverlay || isEditing || taskGestureState.isDragging()) {
-      return;
-    }
-
-    taskGestureState.setReady(true);
-    taskGestureState.setDragging(true);
-    setIsDragging(true);
-    onTaskTouchStart?.();
-    onTaskDragStart?.(
-      task,
-      getTaskDragLayout(event, gesture, localOffset),
-    );
-  }, [
-    getTaskDragLayout,
-    isEditing,
-    isOverlay,
-    onTaskDragStart,
-    onTaskTouchStart,
-    task,
-    taskGestureState,
-  ]);
-
-  const finishTaskDrag = useCallback((
-    deltaX = 0,
-    deltaY = 0,
-    shouldMoveTask = false,
-  ) => {
-    const wasDragging = taskGestureState.isDragging();
-
-    taskGestureState.reset();
-    setIsDragging(false);
-
-    if (wasDragging) {
-      if (shouldMoveTask) {
-        moveTask(task.id, deltaX, deltaY);
+  const startTaskDrag = useCallback(
+    (
+      event: GestureResponderEvent,
+      gesture?: PanResponderGestureState,
+      localOffset = { x: 0, y: 0 },
+    ) => {
+      if (isOverlay || isEditing || taskGestureState.isDragging()) {
+        return;
       }
 
-      onTaskDragEnd?.(shouldMoveTask);
-    }
+      taskGestureState.setReady(true);
+      taskGestureState.setDragging(true);
+      setIsDragging(true);
+      onTaskTouchStart?.();
+      onTaskDragStart?.(task, getTaskDragLayout(event, gesture, localOffset));
+    },
+    [
+      getTaskDragLayout,
+      isEditing,
+      isOverlay,
+      onTaskDragStart,
+      onTaskTouchStart,
+      task,
+      taskGestureState,
+    ],
+  );
 
-    onTaskTouchEnd?.();
-  }, [
-    moveTask,
-    onTaskDragEnd,
-    onTaskTouchEnd,
-    task.id,
-    taskGestureState,
-  ]);
+  const finishTaskDrag = useCallback(
+    (deltaX = 0, deltaY = 0, shouldMoveTask = false) => {
+      const wasDragging = taskGestureState.isDragging();
+
+      taskGestureState.reset();
+      setIsDragging(false);
+
+      if (wasDragging) {
+        if (shouldMoveTask) {
+          moveTask(task.id, deltaX, deltaY);
+        }
+
+        onTaskDragEnd?.(shouldMoveTask);
+      }
+
+      onTaskTouchEnd?.();
+    },
+    [moveTask, onTaskDragEnd, onTaskTouchEnd, task.id, taskGestureState],
+  );
 
   const taskPanResponder = useMemo(() => {
     function shouldStartTaskDrag(
@@ -275,10 +271,7 @@ function TaskCard({
     const { width, height } = event.nativeEvent.layout;
 
     setCardLayout((currentLayout) => {
-      if (
-        currentLayout.width === width &&
-        currentLayout.height === height
-      ) {
+      if (currentLayout.width === width && currentLayout.height === height) {
         return currentLayout;
       }
 
@@ -334,9 +327,7 @@ function TaskCard({
       onTouchCancel={handleTouchFinish}
       onTouchEnd={handleTouchFinish}
       onTouchStart={() => taskGestureState.beginTouch()}
-      pointerEvents={
-        isDragPreviewSource && !isDragging ? "none" : "auto"
-      }
+      pointerEvents={isDragPreviewSource && !isDragging ? "none" : "auto"}
       style={[
         styles.card,
         isDragging && styles.draggingCard,
@@ -389,7 +380,7 @@ function TaskCard({
 const styles = StyleSheet.create({
   card: {
     maxHeight: 200,
-    minHeight: 50,
+    minHeight: 30,
     flexDirection: "row",
     alignItems: "center",
     padding: CARD_PADDING,
@@ -433,8 +424,8 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   deleteButton: {
-    width: 35,
-    height: 35,
+    width: 30,
+    height: 30,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 4,

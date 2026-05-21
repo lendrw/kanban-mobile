@@ -19,8 +19,8 @@ function TrashIcon({ color = "#ffffff" }: TrashIconProps) {
 
 const styles = StyleSheet.create({
   icon: {
-    width: 22,
-    height: 22,
+    width: 18,
+    height: 18,
     alignItems: "center",
   },
   handle: {
@@ -28,9 +28,9 @@ const styles = StyleSheet.create({
     top: 2,
     width: 8,
     height: 4,
-    borderTopWidth: 1.5,
-    borderLeftWidth: 1.5,
-    borderRightWidth: 1.5,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
     borderTopLeftRadius: 2,
     borderTopRightRadius: 2,
   },
@@ -38,7 +38,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 7,
     width: 18,
-    borderTopWidth: 1.7,
+    borderTopWidth: 1,
     borderRadius: 1,
   },
   can: {
@@ -46,9 +46,9 @@ const styles = StyleSheet.create({
     top: 9,
     width: 14,
     height: 11,
-    borderLeftWidth: 1.7,
-    borderRightWidth: 1.7,
-    borderBottomWidth: 1.7,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
     borderBottomLeftRadius: 2,
     borderBottomRightRadius: 2,
     flexDirection: "row",
@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   line: {
-    width: 1.5,
+    width: 1,
     height: 7,
     borderRadius: 1,
   },
