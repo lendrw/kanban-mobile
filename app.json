@@ -7,6 +7,14 @@
     "userInterfaceStyle": "dark",
     "web": {
       "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7062312b-6aa3-49c9-9252-5ecf9d2f73f3"
+      }
+    },
+    "android": {
+      "package": "com.lendrw.kanban"
     }
   }
 }

@@ -8,6 +8,11 @@ the board with drag-and-drop interactions.
   <img src="docs/board.png" alt="Kanban Mobile board screenshot" width="420" />
 </p>
 
+## APK Download
+
+Download the Android APK from Expo:
+https://expo.dev/accounts/lendrw/projects/kanban/builds/920de48f-7c63-4e50-89aa-544774e038ce
+
 ## Features
 
 - Create, edit, delete, and reorder columns.
