@@ -1,8 +1,8 @@
 # Kanban Mobile
 
 A mobile-friendly Kanban board built with React Native and Expo. The app lets
-you create columns and tasks, edit their content, delete items, and rearrange
-the board with drag-and-drop interactions.
+you create columns and cards, edit details, delete items, zoom the board, and
+rearrange work with drag-and-drop interactions.
 
 <p align="center">
   <img src="docs/board.png" alt="Kanban Mobile board screenshot" width="420" />
@@ -16,8 +16,12 @@ https://expo.dev/accounts/lendrw/projects/kanban/builds/920de48f-7c63-4e50-89aa-
 ## Features
 
 - Create, edit, delete, and reorder columns.
-- Create, edit, delete, move, and reorder tasks.
-- Drag tasks between columns with drop previews.
+- Ask for a column title before adding a new column.
+- Create, edit, delete, move, and reorder cards.
+- Edit card titles and descriptions in a details screen.
+- Drag cards between columns with drop previews and magnetic drop animations.
+- Toggle a compact zoomed-out board view for easier scanning.
+- Horizontal scrolling works across the full board surface.
 - Auto-scroll while dragging across the board or inside long columns.
 - Haptic feedback for supported devices.
 - Local board persistence with AsyncStorage.
@@ -67,10 +71,16 @@ npm run lint        # Run ESLint
 src/
   App.tsx
   components/
+    CardDetailsScreen.tsx
     KanbanBoard.tsx
     ColumnContainer.tsx
     TaskCard.tsx
   icons/
+    CheckIcon.tsx
+    CloseIcon.tsx
+    TrashIcon.tsx
+    ZoomInIcon.tsx
+    ZoomOutIcon.tsx
   types.ts
 ```
 
