@@ -624,6 +624,7 @@ function KanbanBoard() {
   const boardHorizontalScrollXRef = useRef(0);
   const boardHorizontalViewportWidthRef = useRef(0);
   const boardHorizontalContentWidthRef = useRef(0);
+  const addColumnDraftPendingScrollRef = useRef(false);
   const boardDragMetrics = useRef(new BoardDragMetrics()).current;
   const [taskOverlayPosition] = useState(() => new Animated.ValueXY());
   const [taskOverlayOpacity] = useState(() => new Animated.Value(0));
@@ -739,7 +740,7 @@ function KanbanBoard() {
   function startAddingColumn() {
     setSelectedTaskId(null);
     setAddTaskDraft(null);
-    scrollBoardHorizontallyToEnd();
+    addColumnDraftPendingScrollRef.current = true;
     setAddColumnDraft({ title: "" });
   }
 
@@ -1460,7 +1461,9 @@ function KanbanBoard() {
             boardHorizontalContentWidthRef.current = width;
 
             if (addColumnDraft !== null) {
-              scrollBoardHorizontallyToEnd(true);
+              const animated = !addColumnDraftPendingScrollRef.current;
+              addColumnDraftPendingScrollRef.current = false;
+              scrollBoardHorizontallyToEnd(animated);
             }
           }}
           onLayout={(event) => {
