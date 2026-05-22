@@ -113,7 +113,7 @@ function MagneticTaskItem({
         return;
       }
 
-      if (!previousLayout || !shouldAnimateTaskLayout) {
+      if (!previousLayout || !shouldAnimateTaskLayout || dropAnimation?.taskId === task.id) {
         magnetX.stopAnimation();
         magnetY.stopAnimation();
         magnetX.setValue(0);
