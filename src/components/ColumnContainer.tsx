@@ -27,6 +27,7 @@ const TASK_PREVIEW_TRANSITION = LinearTransition.duration(100);
 
 interface ColumnContainerProps {
   column: Column;
+  columnWidth: number;
   deleteColumn: (id: Column["id"]) => void;
   updateColumn: (id: Column["id"], title: Column["title"]) => void;
   startAddingTask: (columnId: Column["id"]) => void;
@@ -60,11 +61,13 @@ interface ColumnContainerProps {
   draggingTaskId: Id | null;
   isTaskDragActive: boolean;
   isDropTarget: boolean;
+  isZoomedOut: boolean;
   tasks: Task[];
 }
 
 function ColumnContainer({
   column,
+  columnWidth,
   deleteColumn,
   updateColumn,
   startAddingTask,
@@ -89,6 +92,7 @@ function ColumnContainer({
   draggingTaskId,
   isTaskDragActive,
   isDropTarget,
+  isZoomedOut,
   tasks,
 }: ColumnContainerProps) {
   const [editMode, setEditMode] = useState(false);
@@ -218,6 +222,7 @@ function ColumnContainer({
         layout={TASK_PREVIEW_TRANSITION}
         style={[
           styles.taskDropPreview,
+          isZoomedOut && styles.compactTaskDropPreview,
           { height: taskDragPreview.placeholderHeight },
         ]}
       />
@@ -230,6 +235,7 @@ function ColumnContainer({
         task={task}
         deleteTask={deleteTask}
         moveTask={moveTask}
+        isZoomedOut={isZoomedOut}
         onOpenTaskDetails={onOpenTaskDetails}
         onTaskDragStart={onTaskDragStart}
         onTaskDragMove={onTaskDragMove}
@@ -294,6 +300,7 @@ function ColumnContainer({
       }}
       style={[
         styles.column,
+        { width: columnWidth },
         isDragging && styles.draggingColumn,
         isDropTarget && styles.dropTargetColumn,
         { transform: [{ translateX: drag.x }] },
@@ -306,14 +313,25 @@ function ColumnContainer({
         onPress={() => {
           setEditMode(true);
         }}
-        style={styles.header}
+        style={[styles.header, isZoomedOut && styles.compactHeader]}
         {...columnPanResponder.panHandlers}
       >
         <View style={styles.titleGroup}>
-          <View style={styles.counter}>
-            <Text style={styles.counterText}>{tasks.length}</Text>
+          <View style={[styles.counter, isZoomedOut && styles.compactCounter]}>
+            <Text
+              style={[
+                styles.counterText,
+                isZoomedOut && styles.compactCounterText,
+              ]}
+            >
+              {tasks.length}
+            </Text>
           </View>
-          {!editMode && <Text style={styles.title}>{column.title}</Text>}
+          {!editMode && (
+            <Text style={[styles.title, isZoomedOut && styles.compactTitle]}>
+              {column.title}
+            </Text>
+          )}
           {editMode && (
             <TextInput
               value={column.title}
@@ -321,7 +339,10 @@ function ColumnContainer({
               onChangeText={(title) => updateColumn(column.id, title)}
               onBlur={() => setEditMode(false)}
               onSubmitEditing={() => setEditMode(false)}
-              style={styles.titleInput}
+              style={[
+                styles.titleInput,
+                isZoomedOut && styles.compactTitleInput,
+              ]}
               selectionColor="#f43f5e"
             />
           )}
@@ -334,7 +355,7 @@ function ColumnContainer({
             event.stopPropagation();
             deleteColumn(column.id);
           }}
-          style={styles.iconButton}
+          style={[styles.iconButton, isZoomedOut && styles.compactIconButton]}
         >
           <TrashIcon color="#9ca3af" />
         </TouchableOpacity>
@@ -343,7 +364,7 @@ function ColumnContainer({
       <View
         ref={tasksListRef}
         collapsable={false}
-        style={styles.tasks}
+        style={[styles.tasks, isZoomedOut && styles.compactTasks]}
         onLayout={(event) => {
           const height = event.nativeEvent.layout.height;
           contentHeightRef.current = height;
@@ -364,7 +385,10 @@ function ColumnContainer({
             onChangeText={onAddTaskTitleChange}
             onSubmitEditing={onSubmitAddingTask}
             returnKeyType="done"
-            style={styles.addTaskInput}
+            style={[
+              styles.addTaskInput,
+              isZoomedOut && styles.compactAddTaskInput,
+            ]}
             selectionColor="#f43f5e"
           />
         )}
@@ -375,13 +399,21 @@ function ColumnContainer({
           activeOpacity={0.8}
           accessibilityLabel={`Add task to ${column.title}`}
           accessibilityRole="button"
-          style={styles.footer}
+          style={[styles.footer, isZoomedOut && styles.compactFooter]}
           onPress={() => {
             startAddingTask(column.id);
           }}
         >
-          <Text style={styles.footerIcon}>+</Text>
-          <Text style={styles.footerText}>Add Task</Text>
+          <Text
+            style={[styles.footerIcon, isZoomedOut && styles.compactFooterIcon]}
+          >
+            +
+          </Text>
+          <Text
+            style={[styles.footerText, isZoomedOut && styles.compactFooterText]}
+          >
+            Add Task
+          </Text>
         </TouchableOpacity>
       )}
     </Animated.View>
@@ -426,6 +458,10 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 8,
   },
+  compactTasks: {
+    gap: 8,
+    padding: 6,
+  },
 
   addTaskInput: {
     minHeight: 50,
@@ -437,6 +473,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#0d1117",
   },
+  compactAddTaskInput: {
+    minHeight: 38,
+    fontSize: 12,
+    padding: 8,
+    borderRadius: 8,
+  },
 
   taskDropPreview: {
     minHeight: 50,
@@ -445,6 +487,10 @@ const styles = StyleSheet.create({
     borderColor: "#38bdf8",
     borderRadius: 12,
     backgroundColor: "rgba(56,189,248,0.14)",
+  },
+  compactTaskDropPreview: {
+    minHeight: 38,
+    borderRadius: 8,
   },
 
   header: {
@@ -458,6 +504,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  compactHeader: {
+    height: 48,
+    padding: 8,
+    borderWidth: 3,
   },
 
   titleGroup: {
@@ -476,10 +527,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     backgroundColor: "#0d1117",
   },
+  compactCounter: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    paddingHorizontal: 6,
+  },
 
   counterText: {
     color: "#ffffff",
     fontSize: 14,
+  },
+  compactCounterText: {
+    fontSize: 12,
   },
 
   title: {
@@ -487,6 +547,9 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 16,
     fontWeight: "700",
+  },
+  compactTitle: {
+    fontSize: 13,
   },
 
   titleInput: {
@@ -499,6 +562,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     backgroundColor: "#000000",
   },
+  compactTitleInput: {
+    height: 34,
+    fontSize: 13,
+    paddingHorizontal: 6,
+  },
 
   iconButton: {
     width: 36,
@@ -506,6 +574,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 4,
+  },
+  compactIconButton: {
+    width: 30,
+    height: 30,
   },
 
   footer: {
@@ -518,16 +590,28 @@ const styles = StyleSheet.create({
     borderColor: "#161c22",
     borderRadius: 6,
   },
+  compactFooter: {
+    minHeight: 44,
+    gap: 6,
+    padding: 10,
+  },
 
   footerIcon: {
     color: "#ffffff",
     fontSize: 24,
     lineHeight: 24,
   },
+  compactFooterIcon: {
+    fontSize: 20,
+    lineHeight: 20,
+  },
 
   footerText: {
     color: "#ffffff",
     fontSize: 16,
+  },
+  compactFooterText: {
+    fontSize: 13,
   },
 });
 

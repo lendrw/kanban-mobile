@@ -6,12 +6,15 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import CheckIcon from "../icons/CheckIcon";
 import CloseIcon from "../icons/CloseIcon";
+import ZoomInIcon from "../icons/ZoomInIcon";
+import ZoomOutIcon from "../icons/ZoomOutIcon";
 import type {
   Column,
   ColumnScrollMetrics,
@@ -24,16 +27,54 @@ import CardDetailsScreen from "./CardDetailsScreen";
 import ColumnContainer from "./ColumnContainer";
 import TaskCard from "./TaskCard";
 
-const COLUMN_WIDTH = 250;
-const COLUMN_GAP = 16;
 const TASK_HEIGHT = 100;
-const TASK_GAP = 16;
 const AUTO_SCROLL_EDGE_SIZE = 30;
 const VERTICAL_AUTO_SCROLL_EDGE_SIZE = 56;
 const VERTICAL_AUTO_SCROLL_MIN_STEP = 2;
 const VERTICAL_AUTO_SCROLL_MAX_STEP = 22;
-const TASKS_CONTENT_PADDING = 8;
 const BOARD_STORAGE_KEY = "@kanban-mobile/board-state";
+
+type BoardDensityLayout = {
+  columnWidth: number;
+  columnGap: number;
+  taskGap: number;
+  taskMinHeight: number;
+  taskListPadding: number;
+  boardPaddingHorizontal: number;
+  boardPaddingVertical: number;
+  addColumnHeight: number;
+  addColumnPadding: number;
+  addColumnTextSize: number;
+  addColumnIconSize: number;
+};
+
+const NORMAL_BOARD_LAYOUT: BoardDensityLayout = {
+  columnWidth: 250,
+  columnGap: 16,
+  taskGap: 12,
+  taskMinHeight: 30,
+  taskListPadding: 8,
+  boardPaddingHorizontal: 40,
+  boardPaddingVertical: 40,
+  addColumnHeight: 60,
+  addColumnPadding: 16,
+  addColumnTextSize: 16,
+  addColumnIconSize: 28,
+};
+
+const ZOOMED_OUT_BOARD_LAYOUT: BoardDensityLayout = {
+  columnWidth: 180,
+  columnGap: 10,
+  taskGap: 8,
+  taskMinHeight: 26,
+  taskListPadding: 6,
+  boardPaddingHorizontal: 18,
+  boardPaddingVertical: 18,
+  addColumnHeight: 48,
+  addColumnPadding: 10,
+  addColumnTextSize: 13,
+  addColumnIconSize: 22,
+};
 
 type PersistedBoardState = {
   columns: Column[];
@@ -55,6 +96,10 @@ type TaskDragPreview = {
 
 type AddTaskDraft = {
   columnId: Id;
+  title: string;
+};
+
+type AddColumnDraft = {
   title: string;
 };
 
@@ -308,12 +353,15 @@ class BoardDragMetrics {
     pointerY: number,
     placeholderHeight: number,
     taskCount: number,
+    taskGap: number,
+    taskMinHeight: number,
+    taskListPadding: number,
   ) {
     const metrics = this.columnScrollMetrics.get(String(columnId));
     if (!metrics || metrics.viewportHeight <= 0) return null;
 
     const pointerContentY =
-      pointerY - metrics.windowY + metrics.scrollY - TASKS_CONTENT_PADDING;
+      pointerY - metrics.windowY + metrics.scrollY - taskListPadding;
     const taskLayouts = this.columnTaskLayouts.get(String(columnId)) ?? [];
 
     if (taskLayouts.length > 0) {
@@ -328,7 +376,7 @@ class BoardDragMetrics {
       return clamp(layoutIndex, 0, taskCount);
     }
 
-    const slotHeight = Math.max(placeholderHeight, 50) + TASK_GAP;
+    const slotHeight = Math.max(placeholderHeight, taskMinHeight) + taskGap;
 
     return clamp(Math.round(pointerContentY / slotHeight), 0, taskCount);
   }
@@ -430,6 +478,9 @@ function getTaskDragPreview(
   columns: Column[],
   tasks: Task[],
   placeholderHeight: number,
+  columnStep: number,
+  taskGap: number,
+  taskMinHeight: number,
   targetColumnId?: Id | null,
   targetIndexOverride?: number | null,
 ): TaskDragPreview | null {
@@ -442,7 +493,7 @@ function getTaskDragPreview(
   if (sourceColumnIndex === -1) return null;
 
   const fallbackTargetColumnIndex = clamp(
-    sourceColumnIndex + Math.round(deltaX / (COLUMN_WIDTH + COLUMN_GAP)),
+    sourceColumnIndex + Math.round(deltaX / columnStep),
     0,
     columns.length - 1,
   );
@@ -462,7 +513,9 @@ function getTaskDragPreview(
       ? clamp(targetIndexOverride, 0, targetTasksWithoutDragged.length)
       : clamp(
           sourceTaskIndex +
-            Math.round(deltaY / (Math.max(placeholderHeight, 50) + TASK_GAP)),
+            Math.round(
+              deltaY / (Math.max(placeholderHeight, taskMinHeight) + taskGap),
+            ),
           0,
           targetTasksWithoutDragged.length,
         );
@@ -516,7 +569,10 @@ function KanbanBoard() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [hasLoadedStoredBoard, setHasLoadedStoredBoard] = useState(false);
   const [addTaskDraft, setAddTaskDraft] = useState<AddTaskDraft | null>(null);
+  const [addColumnDraft, setAddColumnDraft] =
+    useState<AddColumnDraft | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<Id | null>(null);
+  const [isZoomedOut, setIsZoomedOut] = useState(false);
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragState | null>(
     null,
   );
@@ -550,6 +606,11 @@ function KanbanBoard() {
   const [taskOverlayOpacity] = useState(() => new Animated.Value(0));
   const [taskOverlayScale] = useState(() => new Animated.Value(1));
   const [taskOverlayTilt] = useState(() => new Animated.Value(0));
+  const boardLayout = isZoomedOut
+    ? ZOOMED_OUT_BOARD_LAYOUT
+    : NORMAL_BOARD_LAYOUT;
+  const columnStep = boardLayout.columnWidth + boardLayout.columnGap;
+  const isAddingColumn = addColumnDraft !== null;
 
   useEffect(() => {
     let isMounted = true;
@@ -594,6 +655,18 @@ function KanbanBoard() {
     );
   }, [columns, hasLoadedStoredBoard, tasks]);
 
+  useEffect(() => {
+    if (!isAddingColumn) return;
+
+    const scrollFrame = requestAnimationFrame(() => {
+      boardScrollRef.current?.scrollToEnd({ animated: true });
+    });
+
+    return () => {
+      cancelAnimationFrame(scrollFrame);
+    };
+  }, [isAddingColumn]);
+
   const tasksByColumn = useMemo(
     () =>
       columns.reduce<Record<string, Task[]>>((acc, column) => {
@@ -619,16 +692,40 @@ function KanbanBoard() {
     return Math.random().toString(36).substring(2, 10);
   }
 
-  function createColumn() {
+  function startAddingColumn() {
+    setSelectedTaskId(null);
     setAddTaskDraft(null);
+    setAddColumnDraft({ title: "" });
+  }
+
+  function updateAddColumnTitle(title: string) {
+    setAddColumnDraft((currentDraft) => {
+      if (!currentDraft) return currentDraft;
+
+      return {
+        ...currentDraft,
+        title,
+      };
+    });
+  }
+
+  function cancelAddingColumn() {
+    setAddColumnDraft(null);
+  }
+
+  function confirmAddingColumn() {
+    const title = addColumnDraft?.title.trim();
+
+    if (!addColumnDraft || !title) return;
 
     setColumns((currentColumns) => [
       ...currentColumns,
       {
         id: generateId(),
-        title: `Column ${currentColumns.length + 1}`,
+        title,
       },
     ]);
+    setAddColumnDraft(null);
   }
 
   function deleteColumn(id: Id) {
@@ -658,6 +755,7 @@ function KanbanBoard() {
 
   function startAddingTask(columnId: Id) {
     setSelectedTaskId(null);
+    setAddColumnDraft(null);
     setAddTaskDraft({ columnId, title: "" });
   }
 
@@ -699,6 +797,7 @@ function KanbanBoard() {
 
   function openTaskDetails(id: Id) {
     setAddTaskDraft(null);
+    setAddColumnDraft(null);
     setSelectedTaskId(id);
   }
 
@@ -735,13 +834,19 @@ function KanbanBoard() {
 
   const canConfirmAddTask =
     addTaskDraft !== null && addTaskDraft.title.trim().length > 0;
+  const canConfirmAddColumn =
+    addColumnDraft !== null && addColumnDraft.title.trim().length > 0;
+
+  function toggleBoardZoom() {
+    setIsZoomedOut((currentValue) => !currentValue);
+  }
 
   const moveColumn = useCallback((id: Id, deltaX: number) => {
     setColumns((currentColumns) => {
       const fromIndex = currentColumns.findIndex((column) => column.id === id);
       if (fromIndex === -1) return currentColumns;
 
-      const indexOffset = Math.round(deltaX / (COLUMN_WIDTH + COLUMN_GAP));
+      const indexOffset = Math.round(deltaX / columnStep);
       const toIndex = clamp(
         fromIndex + indexOffset,
         0,
@@ -751,7 +856,7 @@ function KanbanBoard() {
       if (fromIndex === toIndex) return currentColumns;
       return arrayMove(currentColumns, fromIndex, toIndex);
     });
-  }, []);
+  }, [columnStep]);
 
   const updateTaskDragPreview = useCallback(
     (
@@ -769,6 +874,9 @@ function KanbanBoard() {
         columns,
         tasks,
         placeholderHeight,
+        columnStep,
+        boardLayout.taskGap,
+        boardLayout.taskMinHeight,
         targetColumnId,
         targetIndexOverride,
       );
@@ -800,7 +908,7 @@ function KanbanBoard() {
         return nextPreview;
       });
     },
-    [columns, tasks],
+    [boardLayout.taskGap, boardLayout.taskMinHeight, columnStep, columns, tasks],
   );
 
   const moveTask = useCallback(
@@ -825,13 +933,16 @@ function KanbanBoard() {
                 columns,
                 currentTasks,
                 placeholderHeight,
+                columnStep,
+                boardLayout.taskGap,
+                boardLayout.taskMinHeight,
               );
         if (!preview) return currentTasks;
 
         return moveTaskToPreview(taskId, columns, currentTasks, preview);
       });
     },
-    [columns],
+    [boardLayout.taskGap, boardLayout.taskMinHeight, columnStep, columns],
   );
 
   const stopAutoScrollLoop = useCallback(() => {
@@ -926,6 +1037,9 @@ function KanbanBoard() {
               pointerY,
               currentDrag.placeholderHeight,
               targetTaskCount,
+              boardLayout.taskGap,
+              boardLayout.taskMinHeight,
+              boardLayout.taskListPadding,
             );
 
       updateTaskDragPreview(
@@ -949,6 +1063,9 @@ function KanbanBoard() {
     },
     [
       boardDragMetrics,
+      boardLayout.taskGap,
+      boardLayout.taskListPadding,
+      boardLayout.taskMinHeight,
       columns,
       taskOverlayPosition,
       taskOverlayTilt,
@@ -1174,6 +1291,30 @@ function KanbanBoard() {
           </TouchableOpacity>
         </View>
       )}
+      {addColumnDraft && (
+        <View style={styles.addTaskBar}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            accessibilityLabel="Cancel adding column"
+            accessibilityRole="button"
+            onPress={cancelAddingColumn}
+            style={styles.addTaskBarButton}
+          >
+            <CloseIcon />
+          </TouchableOpacity>
+          <Text style={styles.addTaskBarTitle}>Add a column...</Text>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            accessibilityLabel="Confirm adding column"
+            accessibilityRole="button"
+            disabled={!canConfirmAddColumn}
+            onPress={confirmAddingColumn}
+            style={styles.addTaskBarButton}
+          >
+            <CheckIcon color={canConfirmAddColumn ? "#ffffff" : "#6b7280"} />
+          </TouchableOpacity>
+        </View>
+      )}
       <ScrollView
         ref={boardVerticalScrollRef}
         style={styles.boardVerticalScroll}
@@ -1201,7 +1342,13 @@ function KanbanBoard() {
           scrollEnabled={!isTouchingTask}
           directionalLockEnabled
           nestedScrollEnabled
-          contentContainerStyle={styles.board}
+          contentContainerStyle={[
+            styles.board,
+            {
+              paddingHorizontal: boardLayout.boardPaddingHorizontal,
+              paddingVertical: boardLayout.boardPaddingVertical,
+            },
+          ]}
           keyboardShouldPersistTaps="handled"
           onLayout={(event) => {
             const { x, width } = event.nativeEvent.layout;
@@ -1214,7 +1361,7 @@ function KanbanBoard() {
           showsHorizontalScrollIndicator={false}
         >
           <View
-            style={styles.columns}
+            style={[styles.columns, { gap: boardLayout.columnGap }]}
             onLayout={(event) => {
               boardDragMetrics.setColumnsContainerX(event.nativeEvent.layout.x);
             }}
@@ -1228,6 +1375,7 @@ function KanbanBoard() {
                 <ColumnContainer
                   key={col.id}
                   column={col}
+                  columnWidth={boardLayout.columnWidth}
                   deleteColumn={deleteColumn}
                   updateColumn={updateColumn}
                   startAddingTask={startAddingTask}
@@ -1254,23 +1402,90 @@ function KanbanBoard() {
                   draggingTaskId={activeTaskDrag?.task.id ?? null}
                   isTaskDragActive={activeTaskDrag !== null}
                   isDropTarget={isDropTarget}
+                  isZoomedOut={isZoomedOut}
                   tasks={tasksByColumn[String(col.id)] ?? []}
                 />
               );
             })}
-            <TouchableOpacity
-              activeOpacity={0.8}
-              accessibilityLabel="Add column"
-              accessibilityRole="button"
-              onPress={createColumn}
-              style={styles.addColumnButton}
-            >
-              <Text style={styles.addIcon}>+</Text>
-              <Text style={styles.addColumnText}>Add Column</Text>
-            </TouchableOpacity>
+            {addColumnDraft ? (
+              <View
+                style={[
+                  styles.addColumnDraft,
+                  {
+                    width: boardLayout.columnWidth,
+                    minWidth: boardLayout.columnWidth,
+                    padding: boardLayout.taskListPadding,
+                  },
+                ]}
+              >
+                <TextInput
+                  value={addColumnDraft.title}
+                  autoFocus
+                  placeholder="Column title"
+                  placeholderTextColor="#8b949e"
+                  onChangeText={updateAddColumnTitle}
+                  onSubmitEditing={confirmAddingColumn}
+                  returnKeyType="done"
+                  style={[
+                    styles.addColumnInput,
+                    isZoomedOut && styles.compactAddColumnInput,
+                  ]}
+                  selectionColor="#f43f5e"
+                />
+              </View>
+            ) : (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                accessibilityLabel="Add column"
+                accessibilityRole="button"
+                onPress={startAddingColumn}
+                style={[
+                  styles.addColumnButton,
+                  {
+                    width: boardLayout.columnWidth,
+                    minWidth: boardLayout.columnWidth,
+                    height: boardLayout.addColumnHeight,
+                    padding: boardLayout.addColumnPadding,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.addIcon,
+                    {
+                      fontSize: boardLayout.addColumnIconSize,
+                      lineHeight: boardLayout.addColumnIconSize,
+                    },
+                  ]}
+                >
+                  +
+                </Text>
+                <Text
+                  style={[
+                    styles.addColumnText,
+                    { fontSize: boardLayout.addColumnTextSize },
+                  ]}
+                >
+                  Add Column
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </ScrollView>
       </ScrollView>
+      <TouchableOpacity
+        activeOpacity={0.8}
+        accessibilityLabel={isZoomedOut ? "Zoom in board" : "Zoom out board"}
+        accessibilityRole="button"
+        disabled={activeTaskDrag !== null}
+        onPress={toggleBoardZoom}
+        style={[
+          styles.zoomButton,
+          activeTaskDrag !== null && styles.zoomButtonDisabled,
+        ]}
+      >
+        {isZoomedOut ? <ZoomInIcon /> : <ZoomOutIcon />}
+      </TouchableOpacity>
       <View pointerEvents="none" style={styles.dragOverlay}>
         {activeTaskDrag && (
           <Animated.View
@@ -1298,6 +1513,7 @@ function KanbanBoard() {
               task={activeTaskDrag.task}
               deleteTask={deleteTask}
               moveTask={moveTask}
+              isZoomedOut={isZoomedOut}
               isOverlay
             />
           </Animated.View>
@@ -1348,23 +1564,16 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: "flex-start",
     justifyContent: "flex-start",
-    paddingHorizontal: 40,
-    paddingVertical: 40,
   },
   columns: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: COLUMN_GAP,
   },
   addColumnButton: {
-    width: COLUMN_WIDTH,
-    minWidth: COLUMN_WIDTH,
-    height: 60,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 8,
-    padding: 16,
     borderWidth: 2,
     borderColor: "#161c22",
     borderRadius: 8,
@@ -1372,12 +1581,49 @@ const styles = StyleSheet.create({
   },
   addIcon: {
     color: "#ffffff",
-    fontSize: 28,
-    lineHeight: 28,
   },
   addColumnText: {
     color: "#ffffff",
-    fontSize: 16,
+  },
+  addColumnDraft: {
+    borderWidth: 2,
+    borderColor: "#161c22",
+    borderRadius: 8,
+    backgroundColor: "#161c22",
+  },
+  addColumnInput: {
+    minHeight: 50,
+    color: "#ffffff",
+    fontSize: 15,
+    padding: 10,
+    borderWidth: 2,
+    borderColor: "#30363d",
+    borderRadius: 12,
+    backgroundColor: "#0d1117",
+  },
+  compactAddColumnInput: {
+    minHeight: 38,
+    fontSize: 12,
+    padding: 8,
+    borderRadius: 8,
+  },
+  zoomButton: {
+    position: "absolute",
+    right: 18,
+    bottom: 18,
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#30363d",
+    borderRadius: 24,
+    backgroundColor: "#0d1117",
+    zIndex: 30,
+    elevation: 30,
+  },
+  zoomButtonDisabled: {
+    opacity: 0.45,
   },
   dragOverlay: {
     ...StyleSheet.absoluteFillObject,

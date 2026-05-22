@@ -16,6 +16,7 @@ import type { Id, Task, TaskDragLayout } from "../types";
 const DRAG_ACTIVATION_DELAY_MS = 180;
 const DRAG_ACTIVATION_DISTANCE = 8;
 const CARD_PADDING = 8;
+const COMPACT_CARD_PADDING = 6;
 
 class TaskGestureState {
   private ready = false;
@@ -75,6 +76,7 @@ interface TaskCardProps {
   moveTask: (id: Id, deltaX: number, deltaY: number) => void;
   isOverlay?: boolean;
   isDragPreviewSource?: boolean;
+  isZoomedOut?: boolean;
   onOpenTaskDetails?: (id: Task["id"]) => void;
   onTaskDragStart?: (task: Task, layout: TaskDragLayout) => void;
   onTaskDragMove?: (
@@ -94,6 +96,7 @@ function TaskCard({
   moveTask,
   isOverlay = false,
   isDragPreviewSource = false,
+  isZoomedOut = false,
   onOpenTaskDetails,
   onTaskDragStart,
   onTaskDragMove,
@@ -104,6 +107,7 @@ function TaskCard({
   const [isDragging, setIsDragging] = useState(false);
   const [taskGestureState] = useState(() => new TaskGestureState());
   const [cardLayout, setCardLayout] = useState({ width: 250, height: 50 });
+  const cardPadding = isZoomedOut ? COMPACT_CARD_PADDING : CARD_PADDING;
 
   const getTaskDragLayout = useCallback(
     (
@@ -276,12 +280,30 @@ function TaskCard({
 
   if (isOverlay) {
     return (
-      <View style={[styles.card, styles.overlayCard]}>
-        <View style={styles.contentButton}>
-          <Text style={styles.content}>{task.content}</Text>
+      <View
+        style={[
+          styles.card,
+          isZoomedOut && styles.compactCard,
+          styles.overlayCard,
+        ]}
+      >
+        <View
+          style={[
+            styles.contentButton,
+            isZoomedOut && styles.compactContentButton,
+          ]}
+        >
+          <Text style={[styles.content, isZoomedOut && styles.compactContent]}>
+            {task.content}
+          </Text>
         </View>
 
-        <View style={styles.deleteButton}>
+        <View
+          style={[
+            styles.deleteButton,
+            isZoomedOut && styles.compactDeleteButton,
+          ]}
+        >
           <TrashIcon />
         </View>
       </View>
@@ -297,6 +319,7 @@ function TaskCard({
       pointerEvents={isDragPreviewSource && !isDragging ? "none" : "auto"}
       style={[
         styles.card,
+        isZoomedOut && styles.compactCard,
         isDragging && styles.draggingCard,
         isDragPreviewSource && styles.dragPreviewSourceCard,
       ]}
@@ -309,8 +332,8 @@ function TaskCard({
         delayLongPress={DRAG_ACTIVATION_DELAY_MS}
         onLongPress={(event) => {
           startTaskDrag(event, undefined, {
-            x: CARD_PADDING,
-            y: CARD_PADDING,
+            x: cardPadding,
+            y: cardPadding,
           });
         }}
         onPress={(event) => {
@@ -323,9 +346,14 @@ function TaskCard({
           event.stopPropagation();
           onOpenTaskDetails?.(task.id);
         }}
-        style={styles.contentButton}
+        style={[
+          styles.contentButton,
+          isZoomedOut && styles.compactContentButton,
+        ]}
       >
-        <Text style={styles.content}>{task.content}</Text>
+        <Text style={[styles.content, isZoomedOut && styles.compactContent]}>
+          {task.content}
+        </Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -336,7 +364,7 @@ function TaskCard({
           event.stopPropagation();
           deleteTask(task.id);
         }}
-        style={styles.deleteButton}
+        style={[styles.deleteButton, isZoomedOut && styles.compactDeleteButton]}
       >
         <TrashIcon />
       </TouchableOpacity>
@@ -355,6 +383,12 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
     borderRadius: 12,
     backgroundColor: "#0d1117",
+  },
+  compactCard: {
+    maxHeight: 140,
+    minHeight: 26,
+    padding: COMPACT_CARD_PADDING,
+    borderRadius: 8,
   },
   draggingCard: {
     opacity: 0.25,
@@ -380,9 +414,15 @@ const styles = StyleSheet.create({
     minHeight: 30,
     justifyContent: "center",
   },
+  compactContentButton: {
+    minHeight: 24,
+  },
   content: {
     color: "#ffffff",
     fontSize: 15,
+  },
+  compactContent: {
+    fontSize: 12,
   },
   deleteButton: {
     width: 30,
@@ -391,6 +431,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 4,
     backgroundColor: "#161c22",
+  },
+  compactDeleteButton: {
+    width: 24,
+    height: 24,
   },
 });
 
