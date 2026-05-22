@@ -24,6 +24,10 @@ import TaskCard from "./TaskCard";
 
 const TASK_ITEM_TRANSITION = LinearTransition.duration(120);
 const TASK_PREVIEW_TRANSITION = LinearTransition.duration(100);
+const DENSITY_MODE_BY_ZOOM = {
+  compact: "compact",
+  normal: "normal",
+} as const;
 
 interface ColumnContainerProps {
   column: Column;
@@ -62,6 +66,7 @@ interface ColumnContainerProps {
   isTaskDragActive: boolean;
   isDropTarget: boolean;
   isZoomedOut: boolean;
+  shouldAnimateTaskLayout: boolean;
   tasks: Task[];
 }
 
@@ -93,6 +98,7 @@ function ColumnContainer({
   isTaskDragActive,
   isDropTarget,
   isZoomedOut,
+  shouldAnimateTaskLayout,
   tasks,
 }: ColumnContainerProps) {
   const [editMode, setEditMode] = useState(false);
@@ -110,6 +116,9 @@ function ColumnContainer({
     taskDragPreview === null
       ? null
       : Math.min(Math.max(taskDragPreview.targetIndex, 0), visibleTasks.length);
+  const densityMode = isZoomedOut
+    ? DENSITY_MODE_BY_ZOOM.compact
+    : DENSITY_MODE_BY_ZOOM.normal;
 
   const publishTaskLayouts = useCallback(() => {
     const layouts = visibleTasks
@@ -216,10 +225,10 @@ function ColumnContainer({
 
     return (
       <Reanimated.View
-        key={`task-drop-preview-${column.id}`}
+        key={`task-drop-preview-${column.id}-${densityMode}`}
         entering={undefined}
         exiting={FadeOut.duration(60)}
-        layout={TASK_PREVIEW_TRANSITION}
+        layout={shouldAnimateTaskLayout ? TASK_PREVIEW_TRANSITION : undefined}
         style={[
           styles.taskDropPreview,
           isZoomedOut && styles.compactTaskDropPreview,
@@ -248,11 +257,11 @@ function ColumnContainer({
 
     return (
       <Reanimated.View
-        key={task.id}
+        key={`${task.id}-${densityMode}`}
         collapsable={false}
         entering={undefined}
         exiting={undefined}
-        layout={TASK_ITEM_TRANSITION}
+        layout={shouldAnimateTaskLayout ? TASK_ITEM_TRANSITION : undefined}
         onLayout={
           isDragPreviewSource
             ? undefined
@@ -357,7 +366,7 @@ function ColumnContainer({
           }}
           style={[styles.iconButton, isZoomedOut && styles.compactIconButton]}
         >
-          <TrashIcon color="#9ca3af" />
+          <TrashIcon color="#9ca3af" size={isZoomedOut ? 14 : 18} />
         </TouchableOpacity>
       </TouchableOpacity>
 

@@ -304,7 +304,7 @@ function TaskCard({
             isZoomedOut && styles.compactDeleteButton,
           ]}
         >
-          <TrashIcon />
+          <TrashIcon size={isZoomedOut ? 14 : 18} />
         </View>
       </View>
     );
@@ -366,7 +366,7 @@ function TaskCard({
         }}
         style={[styles.deleteButton, isZoomedOut && styles.compactDeleteButton]}
       >
-        <TrashIcon />
+        <TrashIcon size={isZoomedOut ? 14 : 18} />
       </TouchableOpacity>
     </Animated.View>
   );

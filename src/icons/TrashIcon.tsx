@@ -2,22 +2,31 @@ import { StyleSheet, View } from "react-native";
 
 interface TrashIconProps {
   color?: string;
+  size?: number;
 }
 
-function TrashIcon({ color = "#ffffff" }: TrashIconProps) {
+function TrashIcon({ color = "#ffffff", size = 18 }: TrashIconProps) {
+  const scale = size / 18;
+
   return (
-    <View style={styles.icon}>
-      <View style={[styles.lid, { borderColor: color }]} />
-      <View style={[styles.handle, { borderColor: color }]} />
-      <View style={[styles.can, { borderColor: color }]}>
-        <View style={[styles.line, { backgroundColor: color }]} />
-        <View style={[styles.line, { backgroundColor: color }]} />
+    <View style={[styles.iconFrame, { width: size, height: size }]}>
+      <View style={[styles.icon, { transform: [{ scale }] }]}>
+        <View style={[styles.lid, { borderColor: color }]} />
+        <View style={[styles.handle, { borderColor: color }]} />
+        <View style={[styles.can, { borderColor: color }]}>
+          <View style={[styles.line, { backgroundColor: color }]} />
+          <View style={[styles.line, { backgroundColor: color }]} />
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  iconFrame: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
   icon: {
     width: 18,
     height: 18,

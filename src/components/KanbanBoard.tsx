@@ -33,6 +33,7 @@ const VERTICAL_AUTO_SCROLL_EDGE_SIZE = 56;
 const VERTICAL_AUTO_SCROLL_MIN_STEP = 2;
 const VERTICAL_AUTO_SCROLL_MAX_STEP = 22;
 const BOARD_STORAGE_KEY = "@kanban-mobile/board-state";
+const ZOOM_LAYOUT_ANIMATION_LOCK_MS = 180;
 
 type BoardDensityLayout = {
   columnWidth: number;
@@ -573,6 +574,7 @@ function KanbanBoard() {
     useState<AddColumnDraft | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<Id | null>(null);
   const [isZoomedOut, setIsZoomedOut] = useState(false);
+  const [shouldAnimateTaskLayout, setShouldAnimateTaskLayout] = useState(true);
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragState | null>(
     null,
   );
@@ -601,6 +603,9 @@ function KanbanBoard() {
   const lastColumnHapticAt = useRef(0);
   const boardVerticalScrollRef = useRef<ScrollView | null>(null);
   const boardScrollRef = useRef<ScrollView | null>(null);
+  const boardHorizontalScrollXRef = useRef(0);
+  const boardHorizontalViewportWidthRef = useRef(0);
+  const boardHorizontalContentWidthRef = useRef(0);
   const [boardDragMetrics] = useState(() => new BoardDragMetrics());
   const [taskOverlayPosition] = useState(() => new Animated.ValueXY());
   const [taskOverlayOpacity] = useState(() => new Animated.Value(0));
@@ -610,7 +615,6 @@ function KanbanBoard() {
     ? ZOOMED_OUT_BOARD_LAYOUT
     : NORMAL_BOARD_LAYOUT;
   const columnStep = boardLayout.columnWidth + boardLayout.columnGap;
-  const isAddingColumn = addColumnDraft !== null;
 
   useEffect(() => {
     let isMounted = true;
@@ -655,17 +659,35 @@ function KanbanBoard() {
     );
   }, [columns, hasLoadedStoredBoard, tasks]);
 
-  useEffect(() => {
-    if (!isAddingColumn) return;
+  const scrollBoardHorizontallyToEnd = useCallback(() => {
+    const viewportWidth = boardHorizontalViewportWidthRef.current;
+    const contentWidth = boardHorizontalContentWidthRef.current;
 
-    const scrollFrame = requestAnimationFrame(() => {
-      boardScrollRef.current?.scrollToEnd({ animated: true });
-    });
+    if (viewportWidth <= 0 || contentWidth <= 0) {
+      boardScrollRef.current?.scrollToEnd({ animated: false });
+      return;
+    }
+
+    const nextScrollX = Math.max(0, contentWidth - viewportWidth);
+
+    if (Math.abs(nextScrollX - boardHorizontalScrollXRef.current) < 1) return;
+
+    boardHorizontalScrollXRef.current = nextScrollX;
+    boardDragMetrics.setBoardScrollX(nextScrollX);
+    boardScrollRef.current?.scrollTo({ x: nextScrollX, animated: false });
+  }, [boardDragMetrics]);
+
+  useEffect(() => {
+    if (shouldAnimateTaskLayout) return;
+
+    const animationTimeout = setTimeout(() => {
+      setShouldAnimateTaskLayout(true);
+    }, ZOOM_LAYOUT_ANIMATION_LOCK_MS);
 
     return () => {
-      cancelAnimationFrame(scrollFrame);
+      clearTimeout(animationTimeout);
     };
-  }, [isAddingColumn]);
+  }, [shouldAnimateTaskLayout]);
 
   const tasksByColumn = useMemo(
     () =>
@@ -695,6 +717,7 @@ function KanbanBoard() {
   function startAddingColumn() {
     setSelectedTaskId(null);
     setAddTaskDraft(null);
+    scrollBoardHorizontallyToEnd();
     setAddColumnDraft({ title: "" });
   }
 
@@ -838,6 +861,7 @@ function KanbanBoard() {
     addColumnDraft !== null && addColumnDraft.title.trim().length > 0;
 
   function toggleBoardZoom() {
+    setShouldAnimateTaskLayout(false);
     setIsZoomedOut((currentValue) => !currentValue);
   }
 
@@ -1350,12 +1374,23 @@ function KanbanBoard() {
             },
           ]}
           keyboardShouldPersistTaps="handled"
+          onContentSizeChange={(width) => {
+            boardHorizontalContentWidthRef.current = width;
+
+            if (addColumnDraft !== null) {
+              scrollBoardHorizontallyToEnd();
+            }
+          }}
           onLayout={(event) => {
             const { x, width } = event.nativeEvent.layout;
+            boardHorizontalViewportWidthRef.current = width;
             boardDragMetrics.setBoardViewportLayout(x, width);
           }}
           onScroll={(event) => {
-            boardDragMetrics.setBoardScrollX(event.nativeEvent.contentOffset.x);
+            const scrollX = event.nativeEvent.contentOffset.x;
+
+            boardHorizontalScrollXRef.current = scrollX;
+            boardDragMetrics.setBoardScrollX(scrollX);
           }}
           scrollEventThrottle={16}
           showsHorizontalScrollIndicator={false}
@@ -1363,7 +1398,9 @@ function KanbanBoard() {
           <View
             style={[styles.columns, { gap: boardLayout.columnGap }]}
             onLayout={(event) => {
-              boardDragMetrics.setColumnsContainerX(event.nativeEvent.layout.x);
+              const { x } = event.nativeEvent.layout;
+
+              boardDragMetrics.setColumnsContainerX(x);
             }}
           >
             {columns.map((col) => {
@@ -1403,6 +1440,7 @@ function KanbanBoard() {
                   isTaskDragActive={activeTaskDrag !== null}
                   isDropTarget={isDropTarget}
                   isZoomedOut={isZoomedOut}
+                  shouldAnimateTaskLayout={shouldAnimateTaskLayout}
                   tasks={tasksByColumn[String(col.id)] ?? []}
                 />
               );
@@ -1557,7 +1595,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   boardScroll: {
-    flexGrow: 0,
+    flex: 1,
     width: "100%",
   },
   board: {
@@ -1610,13 +1648,11 @@ const styles = StyleSheet.create({
   zoomButton: {
     position: "absolute",
     right: 18,
-    bottom: 18,
+    bottom: 32,
     width: 48,
     height: 48,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#30363d",
     borderRadius: 24,
     backgroundColor: "#0d1117",
     zIndex: 30,
