@@ -155,7 +155,7 @@ function parsePersistedBoardState(
     }
 
     const columns = parsed.columns.filter(isPersistedColumn);
-    const columnIds = new Set(columns.map((column) => String(column.id)));
+    const columnIds = new Set(columns.map((column) => column.id));
     const tasks = parsed.tasks.filter(
       (task): task is Task =>
         isPersistedTask(task) && columnIds.has(String(task.columnId)),
@@ -222,22 +222,22 @@ class BoardDragMetrics {
   }
 
   setColumnLayout(id: Id, layout: ColumnLayout) {
-    this.columnLayouts.set(String(id), layout);
+    this.columnLayouts.set(id, layout);
   }
 
   setColumnScrollMetrics(id: Id, metrics: ColumnScrollMetrics) {
-    this.columnScrollMetrics.set(String(id), metrics);
+    this.columnScrollMetrics.set(id, metrics);
   }
 
   setColumnScrollY(id: Id, scrollY: number) {
-    const metrics = this.columnScrollMetrics.get(String(id));
+    const metrics = this.columnScrollMetrics.get(id);
     if (!metrics) return;
 
     metrics.scrollY = scrollY;
   }
 
   setColumnTaskLayouts(id: Id, layouts: TaskListItemLayout[]) {
-    this.columnTaskLayouts.set(String(id), layouts);
+    this.columnTaskLayouts.set(id, layouts);
   }
 
   getTargetColumnId(columns: Column[], pointerX: number) {
@@ -253,7 +253,7 @@ class BoardDragMetrics {
     let nearestDistance = Number.POSITIVE_INFINITY;
 
     for (const column of columns) {
-      const layout = this.columnLayouts.get(String(column.id));
+      const layout = this.columnLayouts.get(column.id);
       if (!layout) continue;
 
       const columnStart = layout.x;
@@ -365,12 +365,12 @@ class BoardDragMetrics {
     taskMinHeight: number,
     taskListPadding: number,
   ) {
-    const metrics = this.columnScrollMetrics.get(String(columnId));
+    const metrics = this.columnScrollMetrics.get(columnId);
     if (!metrics || metrics.viewportHeight <= 0) return null;
 
     const pointerContentY =
       pointerY - metrics.windowY + metrics.scrollY - taskListPadding;
-    const taskLayouts = this.columnTaskLayouts.get(String(columnId)) ?? [];
+    const taskLayouts = this.columnTaskLayouts.get(columnId) ?? [];
 
     if (taskLayouts.length > 0) {
       const layoutIndex = taskLayouts.findIndex(
@@ -390,7 +390,7 @@ class BoardDragMetrics {
   }
 
   getVerticalAutoScrollTarget(columnId: Id, pointerY: number) {
-    const metrics = this.columnScrollMetrics.get(String(columnId));
+    const metrics = this.columnScrollMetrics.get(columnId);
     if (!metrics || metrics.viewportHeight <= 0) return null;
 
     const maxScrollY = Math.max(
@@ -444,7 +444,7 @@ class BoardDragMetrics {
   }
 
   scrollColumnTo(columnId: Id, scrollY: number) {
-    const metrics = this.columnScrollMetrics.get(String(columnId));
+    const metrics = this.columnScrollMetrics.get(columnId);
     if (!metrics) return;
 
     metrics.scrollY = scrollY;
@@ -624,7 +624,7 @@ function KanbanBoard() {
   const boardHorizontalScrollXRef = useRef(0);
   const boardHorizontalViewportWidthRef = useRef(0);
   const boardHorizontalContentWidthRef = useRef(0);
-  const [boardDragMetrics] = useState(() => new BoardDragMetrics());
+  const boardDragMetrics = useRef(new BoardDragMetrics()).current;
   const [taskOverlayPosition] = useState(() => new Animated.ValueXY());
   const [taskOverlayOpacity] = useState(() => new Animated.Value(0));
   const [taskOverlayScale] = useState(() => new Animated.Value(1));
@@ -633,6 +633,10 @@ function KanbanBoard() {
     ? ZOOMED_OUT_BOARD_LAYOUT
     : NORMAL_BOARD_LAYOUT;
   const columnStep = boardLayout.columnWidth + boardLayout.columnGap;
+  const boardLayoutRef = useRef(boardLayout);
+  boardLayoutRef.current = boardLayout;
+  const columnStepRef = useRef(columnStep);
+  columnStepRef.current = columnStep;
 
   useEffect(() => {
     let isMounted = true;
@@ -677,22 +681,22 @@ function KanbanBoard() {
     );
   }, [columns, hasLoadedStoredBoard, tasks]);
 
-  const scrollBoardHorizontallyToEnd = useCallback(() => {
+  const scrollBoardHorizontallyToEnd = useCallback((animated = false) => {
     const viewportWidth = boardHorizontalViewportWidthRef.current;
     const contentWidth = boardHorizontalContentWidthRef.current;
 
     if (viewportWidth <= 0 || contentWidth <= 0) {
-      boardScrollRef.current?.scrollToEnd({ animated: false });
+      boardScrollRef.current?.scrollToEnd({ animated });
       return;
     }
 
     const nextScrollX = Math.max(0, contentWidth - viewportWidth);
 
-    if (Math.abs(nextScrollX - boardHorizontalScrollXRef.current) < 1) return;
+    if (!animated && Math.abs(nextScrollX - boardHorizontalScrollXRef.current) < 1) return;
 
     boardHorizontalScrollXRef.current = nextScrollX;
     boardDragMetrics.setBoardScrollX(nextScrollX);
-    boardScrollRef.current?.scrollTo({ x: nextScrollX, animated: false });
+    boardScrollRef.current?.scrollTo({ x: nextScrollX, animated });
   }, [boardDragMetrics]);
 
   useEffect(() => {
@@ -710,7 +714,7 @@ function KanbanBoard() {
   const tasksByColumn = useMemo(
     () =>
       columns.reduce<Record<string, Task[]>>((acc, column) => {
-        acc[String(column.id)] = tasks.filter(
+        acc[column.id] = tasks.filter(
           (task) => task.columnId === column.id,
         );
         return acc;
@@ -888,7 +892,7 @@ function KanbanBoard() {
       const fromIndex = currentColumns.findIndex((column) => column.id === id);
       if (fromIndex === -1) return currentColumns;
 
-      const indexOffset = Math.round(deltaX / columnStep);
+      const indexOffset = Math.round(deltaX / columnStepRef.current);
       const toIndex = clamp(
         fromIndex + indexOffset,
         0,
@@ -898,7 +902,7 @@ function KanbanBoard() {
       if (fromIndex === toIndex) return currentColumns;
       return arrayMove(currentColumns, fromIndex, toIndex);
     });
-  }, [columnStep]);
+  }, []);
 
   const updateTaskDragPreview = useCallback(
     (
@@ -909,6 +913,7 @@ function KanbanBoard() {
       targetColumnId?: Id | null,
       targetIndexOverride?: number | null,
     ) => {
+      const { taskGap, taskMinHeight } = boardLayoutRef.current;
       const nextPreview = getTaskDragPreview(
         taskId,
         deltaX,
@@ -916,9 +921,9 @@ function KanbanBoard() {
         columns,
         tasks,
         placeholderHeight,
-        columnStep,
-        boardLayout.taskGap,
-        boardLayout.taskMinHeight,
+        columnStepRef.current,
+        taskGap,
+        taskMinHeight,
         targetColumnId,
         targetIndexOverride,
       );
@@ -950,7 +955,7 @@ function KanbanBoard() {
         return nextPreview;
       });
     },
-    [boardLayout.taskGap, boardLayout.taskMinHeight, columnStep, columns, tasks],
+    [columns, tasks],
   );
 
   const moveTask = useCallback(
@@ -965,6 +970,7 @@ function KanbanBoard() {
           : deltaX;
 
       setTasks((currentTasks) => {
+        const { taskGap, taskMinHeight } = boardLayoutRef.current;
         const preview =
           lastTaskDragPreview.current?.taskId === taskId
             ? lastTaskDragPreview.current
@@ -975,16 +981,16 @@ function KanbanBoard() {
                 columns,
                 currentTasks,
                 placeholderHeight,
-                columnStep,
-                boardLayout.taskGap,
-                boardLayout.taskMinHeight,
+                columnStepRef.current,
+                taskGap,
+                taskMinHeight,
               );
         if (!preview) return currentTasks;
 
         return moveTaskToPreview(taskId, columns, currentTasks, preview);
       });
     },
-    [boardLayout.taskGap, boardLayout.taskMinHeight, columnStep, columns],
+    [columns],
   );
 
   const stopAutoScrollLoop = useCallback(() => {
@@ -1071,6 +1077,7 @@ function KanbanBoard() {
                 task.id !== currentDrag.taskId,
             ).length;
 
+      const { taskGap, taskMinHeight, taskListPadding } = boardLayoutRef.current;
       const targetIndex =
         targetColumnId === null
           ? null
@@ -1079,9 +1086,9 @@ function KanbanBoard() {
               pointerY,
               currentDrag.placeholderHeight,
               targetTaskCount,
-              boardLayout.taskGap,
-              boardLayout.taskMinHeight,
-              boardLayout.taskListPadding,
+              taskGap,
+              taskMinHeight,
+              taskListPadding,
             );
 
       updateTaskDragPreview(
@@ -1112,9 +1119,6 @@ function KanbanBoard() {
     },
     [
       boardDragMetrics,
-      boardLayout.taskGap,
-      boardLayout.taskListPadding,
-      boardLayout.taskMinHeight,
       columns,
       taskOverlayPosition,
       taskOverlayTilt,
@@ -1456,7 +1460,7 @@ function KanbanBoard() {
             boardHorizontalContentWidthRef.current = width;
 
             if (addColumnDraft !== null) {
-              scrollBoardHorizontallyToEnd();
+              scrollBoardHorizontallyToEnd(true);
             }
           }}
           onLayout={(event) => {
@@ -1521,7 +1525,7 @@ function KanbanBoard() {
                   isDropTarget={isDropTarget}
                   isZoomedOut={isZoomedOut}
                   shouldAnimateTaskLayout={shouldAnimateTaskLayout}
-                  tasks={tasksByColumn[String(col.id)] ?? []}
+                  tasks={tasksByColumn[col.id] ?? []}
                 />
               );
             })}

@@ -271,7 +271,7 @@ function ColumnContainer({
 
   const publishTaskLayouts = useCallback(() => {
     const layouts = visibleTasks
-      .map((task) => taskLayoutsRef.current.get(String(task.id)))
+      .map((task) => taskLayoutsRef.current.get(task.id))
       .filter((layout): layout is TaskListItemLayout => layout !== undefined);
 
     onColumnTaskLayoutsChange(column.id, layouts);
@@ -310,7 +310,7 @@ function ColumnContainer({
   }, [isDropTarget, isTaskDragActive, publishScrollMetrics]);
 
   useEffect(() => {
-    const visibleTaskIds = new Set(visibleTasks.map((task) => String(task.id)));
+    const visibleTaskIds = new Set(visibleTasks.map((task) => task.id));
 
     taskLayoutsRef.current.forEach((_layout, taskId) => {
       if (!visibleTaskIds.has(taskId)) {
@@ -324,7 +324,7 @@ function ColumnContainer({
   const handleTaskLayout = useCallback(
     (task: Task, event: LayoutChangeEvent) => {
       const { y, height } = event.nativeEvent.layout;
-      const taskId = String(task.id);
+      const taskId = task.id;
       const currentLayout = taskLayoutsRef.current.get(taskId);
 
       if (currentLayout?.y === y && currentLayout?.height === height) {
