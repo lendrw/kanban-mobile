@@ -22,12 +22,140 @@ import type {
 } from "../types";
 import TaskCard from "./TaskCard";
 
-const TASK_ITEM_TRANSITION = LinearTransition.duration(120);
-const TASK_PREVIEW_TRANSITION = LinearTransition.duration(100);
+const TASK_PREVIEW_TRANSITION = LinearTransition.springify()
+  .damping(20)
+  .mass(0.6)
+  .stiffness(300);
+const MAGNETIC_CARD_SPRING = {
+  tension: 210,
+  friction: 18,
+  useNativeDriver: true,
+};
 const DENSITY_MODE_BY_ZOOM = {
   compact: "compact",
   normal: "normal",
 } as const;
+
+interface MagneticTaskItemProps {
+  children: ReactNode;
+  dropAnimation: {
+    taskId: Id;
+    fromX: number;
+    fromY: number;
+    nonce: number;
+  } | null;
+  isDragPreviewSource: boolean;
+  onDropAnimationEnd: (taskId: Id, nonce: number) => void;
+  onTaskLayout: (task: Task, event: LayoutChangeEvent) => void;
+  shouldAnimateTaskLayout: boolean;
+  task: Task;
+}
+
+function MagneticTaskItem({
+  children,
+  dropAnimation,
+  isDragPreviewSource,
+  onDropAnimationEnd,
+  onTaskLayout,
+  shouldAnimateTaskLayout,
+  task,
+}: MagneticTaskItemProps) {
+  const itemRef = useRef<View | null>(null);
+  const [magnetX] = useState(() => new Animated.Value(0));
+  const [magnetY] = useState(() => new Animated.Value(0));
+  const previousLayoutRef = useRef<{ y: number; height: number } | null>(null);
+  const consumedDropAnimationRef = useRef<number | null>(null);
+
+  const handleLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const { y, height } = event.nativeEvent.layout;
+      const previousLayout = previousLayoutRef.current;
+
+      onTaskLayout(task, event);
+      previousLayoutRef.current = { y, height };
+
+      if (
+        dropAnimation &&
+        dropAnimation.taskId === task.id &&
+        consumedDropAnimationRef.current !== dropAnimation.nonce
+      ) {
+        consumedDropAnimationRef.current = dropAnimation.nonce;
+
+        requestAnimationFrame(() => {
+          itemRef.current?.measureInWindow((windowX, windowY) => {
+            magnetX.stopAnimation();
+            magnetY.stopAnimation();
+            magnetX.setValue(dropAnimation.fromX - windowX);
+            magnetY.setValue(dropAnimation.fromY - windowY);
+
+            Animated.parallel([
+              Animated.spring(magnetX, {
+                ...MAGNETIC_CARD_SPRING,
+                toValue: 0,
+              }),
+              Animated.spring(magnetY, {
+                ...MAGNETIC_CARD_SPRING,
+                toValue: 0,
+              }),
+            ]).start(({ finished }) => {
+              if (finished) {
+                onDropAnimationEnd(task.id, dropAnimation.nonce);
+              }
+            });
+          });
+        });
+
+        return;
+      }
+
+      if (!previousLayout || !shouldAnimateTaskLayout) {
+        magnetX.stopAnimation();
+        magnetY.stopAnimation();
+        magnetX.setValue(0);
+        magnetY.setValue(0);
+        return;
+      }
+
+      const deltaY = previousLayout.y - y;
+
+      if (Math.abs(deltaY) < 1) return;
+
+      magnetX.stopAnimation();
+      magnetY.stopAnimation();
+      magnetX.setValue(0);
+      magnetY.setValue(deltaY);
+      Animated.spring(magnetY, {
+        ...MAGNETIC_CARD_SPRING,
+        toValue: 0,
+      }).start();
+    },
+    [
+      dropAnimation,
+      magnetX,
+      magnetY,
+      onDropAnimationEnd,
+      onTaskLayout,
+      shouldAnimateTaskLayout,
+      task,
+    ],
+  );
+
+  return (
+    <Animated.View
+      ref={itemRef}
+      collapsable={false}
+      onLayout={isDragPreviewSource ? undefined : handleLayout}
+      style={[
+        isDragPreviewSource ? styles.hiddenTaskSlot : undefined,
+        !isDragPreviewSource
+          ? { transform: [{ translateX: magnetX }, { translateY: magnetY }] }
+          : undefined,
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
 
 interface ColumnContainerProps {
   column: Column;
@@ -57,6 +185,13 @@ interface ColumnContainerProps {
   onColumnScrollMetricsChange: (id: Id, metrics: ColumnScrollMetrics) => void;
   onColumnScrollYChange: (id: Id, scrollY: number) => void;
   onColumnTaskLayoutsChange: (id: Id, layouts: TaskListItemLayout[]) => void;
+  dropTaskAnimation: {
+    taskId: Id;
+    fromX: number;
+    fromY: number;
+    nonce: number;
+  } | null;
+  onDropTaskAnimationEnd: (taskId: Id, nonce: number) => void;
   taskDragPreview: {
     taskId: Id;
     targetIndex: number;
@@ -93,6 +228,8 @@ function ColumnContainer({
   onColumnScrollMetricsChange,
   onColumnScrollYChange,
   onColumnTaskLayoutsChange,
+  dropTaskAnimation,
+  onDropTaskAnimationEnd,
   taskDragPreview,
   draggingTaskId,
   isTaskDragActive,
@@ -256,21 +393,19 @@ function ColumnContainer({
     );
 
     return (
-      <Reanimated.View
+      <MagneticTaskItem
         key={`${task.id}-${densityMode}`}
-        collapsable={false}
-        entering={undefined}
-        exiting={undefined}
-        layout={shouldAnimateTaskLayout ? TASK_ITEM_TRANSITION : undefined}
-        onLayout={
-          isDragPreviewSource
-            ? undefined
-            : (event) => handleTaskLayout(task, event)
+        dropAnimation={
+          dropTaskAnimation?.taskId === task.id ? dropTaskAnimation : null
         }
-        style={isDragPreviewSource ? styles.hiddenTaskSlot : undefined}
+        isDragPreviewSource={isDragPreviewSource}
+        onDropAnimationEnd={onDropTaskAnimationEnd}
+        onTaskLayout={handleTaskLayout}
+        shouldAnimateTaskLayout={shouldAnimateTaskLayout}
+        task={task}
       >
         {taskCard}
-      </Reanimated.View>
+      </MagneticTaskItem>
     );
   }
 

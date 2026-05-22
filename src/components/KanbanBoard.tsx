@@ -95,6 +95,13 @@ type TaskDragPreview = {
   placeholderHeight: number;
 };
 
+type DropTaskAnimation = {
+  taskId: Id;
+  fromX: number;
+  fromY: number;
+  nonce: number;
+};
+
 type AddTaskDraft = {
   columnId: Id;
   title: string;
@@ -580,6 +587,10 @@ function KanbanBoard() {
   );
   const [taskDragPreview, setTaskDragPreview] =
     useState<TaskDragPreview | null>(null);
+  const [hiddenDraggingTaskId, setHiddenDraggingTaskId] =
+    useState<Id | null>(null);
+  const [dropTaskAnimation, setDropTaskAnimation] =
+    useState<DropTaskAnimation | null>(null);
   const [isTouchingTask, setIsTouchingTask] = useState(false);
   const activeTaskDragInfo = useRef<{
     taskId: Id;
@@ -603,6 +614,13 @@ function KanbanBoard() {
   const lastColumnHapticAt = useRef(0);
   const boardVerticalScrollRef = useRef<ScrollView | null>(null);
   const boardScrollRef = useRef<ScrollView | null>(null);
+  const dropTaskAnimationNonce = useRef(0);
+  const taskOverlayLayoutRef = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const boardHorizontalScrollXRef = useRef(0);
   const boardHorizontalViewportWidthRef = useRef(0);
   const boardHorizontalContentWidthRef = useRef(0);
@@ -1076,10 +1094,17 @@ function KanbanBoard() {
       );
 
       // movimento preso no dedo
-      taskOverlayPosition.setValue({
-        x: pointerX - currentDrag.touchOffsetX,
-        y: pointerY - currentDrag.touchOffsetY,
-      });
+      const overlayX = pointerX - currentDrag.touchOffsetX;
+      const overlayY = pointerY - currentDrag.touchOffsetY;
+
+      taskOverlayLayoutRef.current = {
+        x: overlayX,
+        y: overlayY,
+        width: taskOverlayLayoutRef.current?.width ?? 0,
+        height: currentDrag.placeholderHeight,
+      };
+
+      taskOverlayPosition.setValue({ x: overlayX, y: overlayY });
 
       taskOverlayTilt.setValue(effectiveDeltaX);
 
@@ -1139,6 +1164,12 @@ function KanbanBoard() {
       taskOverlayOpacity.stopAnimation();
       taskOverlayScale.stopAnimation();
       taskOverlayTilt.stopAnimation();
+      taskOverlayLayoutRef.current = {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      };
       taskOverlayPosition.setValue({ x: layout.x, y: layout.y });
       taskOverlayOpacity.setValue(0.35);
       taskOverlayScale.setValue(0.96);
@@ -1147,6 +1178,7 @@ function KanbanBoard() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light),
       );
 
+      setHiddenDraggingTaskId(task.id);
       setActiveTaskDrag({
         task,
         width: layout.width,
@@ -1202,11 +1234,36 @@ function KanbanBoard() {
       setIsTouchingTask(false);
       stopAutoScrollLoop();
       latestDragPointer.current = null;
+      setHiddenDraggingTaskId(null);
+      setTaskDragPreview(null);
+      lastTaskDragPreview.current = null;
 
       if (dropAccepted) {
         triggerHaptic(() =>
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium),
         );
+
+        if (activeTaskDrag && taskOverlayLayoutRef.current) {
+          dropTaskAnimationNonce.current += 1;
+          setDropTaskAnimation({
+            taskId: activeTaskDrag.task.id,
+            fromX: taskOverlayLayoutRef.current.x,
+            fromY: taskOverlayLayoutRef.current.y,
+            nonce: dropTaskAnimationNonce.current,
+          });
+        }
+
+        taskOverlayOpacity.stopAnimation();
+        taskOverlayScale.stopAnimation();
+        taskOverlayTilt.stopAnimation();
+        taskOverlayOpacity.setValue(0);
+        taskOverlayScale.setValue(1);
+        taskOverlayTilt.setValue(0);
+        setActiveTaskDrag(null);
+        activeTaskDragInfo.current = null;
+        lastHapticColumnId.current = null;
+        taskOverlayLayoutRef.current = null;
+        return;
       }
 
       Animated.parallel([
@@ -1229,13 +1286,18 @@ function KanbanBoard() {
         }),
       ]).start(() => {
         setActiveTaskDrag(null);
-        setTaskDragPreview(null);
         activeTaskDragInfo.current = null;
-        lastTaskDragPreview.current = null;
         lastHapticColumnId.current = null;
+        taskOverlayLayoutRef.current = null;
       });
     },
-    [stopAutoScrollLoop, taskOverlayOpacity, taskOverlayScale, taskOverlayTilt],
+    [
+      activeTaskDrag,
+      stopAutoScrollLoop,
+      taskOverlayOpacity,
+      taskOverlayScale,
+      taskOverlayTilt,
+    ],
   );
 
   const handleTaskTouchStart = useCallback(() => {
@@ -1272,6 +1334,22 @@ function KanbanBoard() {
       boardDragMetrics.setColumnTaskLayouts(id, layouts);
     },
     [boardDragMetrics],
+  );
+
+  const handleDropTaskAnimationEnd = useCallback(
+    (taskId: Id, nonce: number) => {
+      setDropTaskAnimation((currentAnimation) => {
+        if (
+          currentAnimation?.taskId === taskId &&
+          currentAnimation.nonce === nonce
+        ) {
+          return null;
+        }
+
+        return currentAnimation;
+      });
+    },
+    [],
   );
 
   if (selectedTask) {
@@ -1435,8 +1513,10 @@ function KanbanBoard() {
                   onColumnScrollMetricsChange={handleColumnScrollMetricsChange}
                   onColumnScrollYChange={handleColumnScrollYChange}
                   onColumnTaskLayoutsChange={handleColumnTaskLayoutsChange}
+                  dropTaskAnimation={dropTaskAnimation}
+                  onDropTaskAnimationEnd={handleDropTaskAnimationEnd}
                   taskDragPreview={isDropTarget ? taskDragPreview : null}
-                  draggingTaskId={activeTaskDrag?.task.id ?? null}
+                  draggingTaskId={hiddenDraggingTaskId}
                   isTaskDragActive={activeTaskDrag !== null}
                   isDropTarget={isDropTarget}
                   isZoomedOut={isZoomedOut}
