@@ -46,6 +46,7 @@ interface MagneticTaskItemProps {
   } | null;
   isDragPreviewSource: boolean;
   onDropAnimationEnd: (taskId: Id, nonce: number) => void;
+  onDropAnimationStart: (taskId: Id, nonce: number) => void;
   onTaskLayout: (task: Task, event: LayoutChangeEvent) => void;
   shouldAnimateTaskLayout: boolean;
   task: Task;
@@ -56,6 +57,7 @@ function MagneticTaskItem({
   dropAnimation,
   isDragPreviewSource,
   onDropAnimationEnd,
+  onDropAnimationStart,
   onTaskLayout,
   shouldAnimateTaskLayout,
   task,
@@ -70,6 +72,11 @@ function MagneticTaskItem({
     height: number;
   } | null>(null);
   const consumedDropAnimationRef = useRef<number | null>(null);
+  const [visibleDropAnimationNonce, setVisibleDropAnimationNonce] =
+    useState<number | null>(null);
+  const shouldHideForDropAnimation =
+    dropAnimation?.taskId === task.id &&
+    dropAnimation.nonce !== visibleDropAnimationNonce;
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -92,6 +99,8 @@ function MagneticTaskItem({
             magnetY.stopAnimation();
             magnetX.setValue(dropAnimation.fromX - windowX);
             magnetY.setValue(dropAnimation.fromY - windowY);
+            setVisibleDropAnimationNonce(dropAnimation.nonce);
+            onDropAnimationStart(task.id, dropAnimation.nonce);
 
             Animated.parallel([
               Animated.spring(magnetX, {
@@ -146,6 +155,7 @@ function MagneticTaskItem({
       magnetX,
       magnetY,
       onDropAnimationEnd,
+      onDropAnimationStart,
       onTaskLayout,
       shouldAnimateTaskLayout,
       task,
@@ -162,6 +172,7 @@ function MagneticTaskItem({
         !isDragPreviewSource
           ? { transform: [{ translateX: magnetX }, { translateY: magnetY }] }
           : undefined,
+        shouldHideForDropAnimation ? styles.hiddenDropAnimationCard : undefined,
       ]}
     >
       {children}
@@ -204,6 +215,7 @@ interface ColumnContainerProps {
     nonce: number;
   } | null;
   onDropTaskAnimationEnd: (taskId: Id, nonce: number) => void;
+  onDropTaskAnimationStart: (taskId: Id, nonce: number) => void;
   taskDragPreview: {
     taskId: Id;
     targetIndex: number;
@@ -242,6 +254,7 @@ function ColumnContainer({
   onColumnTaskLayoutsChange,
   dropTaskAnimation,
   onDropTaskAnimationEnd,
+  onDropTaskAnimationStart,
   taskDragPreview,
   draggingTaskId,
   isTaskDragActive,
@@ -412,6 +425,7 @@ function ColumnContainer({
         }
         isDragPreviewSource={isDragPreviewSource}
         onDropAnimationEnd={onDropTaskAnimationEnd}
+        onDropAnimationStart={onDropTaskAnimationStart}
         onTaskLayout={handleTaskLayout}
         shouldAnimateTaskLayout={shouldAnimateTaskLayout}
         task={task}
@@ -608,6 +622,9 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8,
     height: 0,
+  },
+  hiddenDropAnimationCard: {
+    opacity: 0,
   },
 
   tasks: {

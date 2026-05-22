@@ -34,6 +34,7 @@ const VERTICAL_AUTO_SCROLL_MIN_STEP = 2;
 const VERTICAL_AUTO_SCROLL_MAX_STEP = 22;
 const BOARD_STORAGE_KEY = "@kanban-mobile/board-state";
 const ZOOM_LAYOUT_ANIMATION_LOCK_MS = 180;
+const DROP_TASK_ANIMATION_START_TIMEOUT_MS = 180;
 
 type BoardDensityLayout = {
   columnWidth: number;
@@ -615,6 +616,9 @@ function KanbanBoard() {
   const boardVerticalScrollRef = useRef<ScrollView | null>(null);
   const boardScrollRef = useRef<ScrollView | null>(null);
   const dropTaskAnimationNonce = useRef(0);
+  const dropTaskAnimationStartTimeout = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const taskOverlayLayoutRef = useRef<{
     x: number;
     y: number;
@@ -711,6 +715,18 @@ function KanbanBoard() {
       clearTimeout(animationTimeout);
     };
   }, [shouldAnimateTaskLayout]);
+
+  const clearDropTaskAnimationStartTimeout = useCallback(() => {
+    if (dropTaskAnimationStartTimeout.current === null) return;
+
+    clearTimeout(dropTaskAnimationStartTimeout.current);
+    dropTaskAnimationStartTimeout.current = null;
+  }, []);
+
+  useEffect(
+    () => clearDropTaskAnimationStartTimeout,
+    [clearDropTaskAnimationStartTimeout],
+  );
 
   const tasksByColumn = useMemo(
     () =>
@@ -1250,24 +1266,46 @@ function KanbanBoard() {
 
         if (activeTaskDrag && taskOverlayLayoutRef.current) {
           dropTaskAnimationNonce.current += 1;
+          const nextDropAnimationNonce = dropTaskAnimationNonce.current;
+          const droppedTaskId = activeTaskDrag.task.id;
+
           setDropTaskAnimation({
-            taskId: activeTaskDrag.task.id,
+            taskId: droppedTaskId,
             fromX: taskOverlayLayoutRef.current.x,
             fromY: taskOverlayLayoutRef.current.y,
-            nonce: dropTaskAnimationNonce.current,
+            nonce: nextDropAnimationNonce,
           });
+          clearDropTaskAnimationStartTimeout();
+          dropTaskAnimationStartTimeout.current = setTimeout(() => {
+            dropTaskAnimationStartTimeout.current = null;
+            setDropTaskAnimation((currentAnimation) => {
+              if (
+                currentAnimation?.taskId === droppedTaskId &&
+                currentAnimation.nonce === nextDropAnimationNonce
+              ) {
+                return null;
+              }
+
+              return currentAnimation;
+            });
+            setActiveTaskDrag((currentDrag) =>
+              currentDrag?.task.id === droppedTaskId ? null : currentDrag,
+            );
+            taskOverlayOpacity.setValue(0);
+            taskOverlayScale.setValue(1);
+            taskOverlayTilt.setValue(0);
+            taskOverlayLayoutRef.current = null;
+          }, DROP_TASK_ANIMATION_START_TIMEOUT_MS);
+        } else {
+          setActiveTaskDrag(null);
+          taskOverlayLayoutRef.current = null;
         }
 
         taskOverlayOpacity.stopAnimation();
         taskOverlayScale.stopAnimation();
         taskOverlayTilt.stopAnimation();
-        taskOverlayOpacity.setValue(0);
-        taskOverlayScale.setValue(1);
-        taskOverlayTilt.setValue(0);
-        setActiveTaskDrag(null);
         activeTaskDragInfo.current = null;
         lastHapticColumnId.current = null;
-        taskOverlayLayoutRef.current = null;
         return;
       }
 
@@ -1298,6 +1336,7 @@ function KanbanBoard() {
     },
     [
       activeTaskDrag,
+      clearDropTaskAnimationStartTimeout,
       stopAutoScrollLoop,
       taskOverlayOpacity,
       taskOverlayScale,
@@ -1355,6 +1394,34 @@ function KanbanBoard() {
       });
     },
     [],
+  );
+
+  const handleDropTaskAnimationStart = useCallback(
+    (taskId: Id, nonce: number) => {
+      if (
+        dropTaskAnimation?.taskId !== taskId ||
+        dropTaskAnimation.nonce !== nonce
+      ) {
+        return;
+      }
+
+      clearDropTaskAnimationStartTimeout();
+      taskOverlayOpacity.stopAnimation();
+      taskOverlayScale.stopAnimation();
+      taskOverlayTilt.stopAnimation();
+      taskOverlayOpacity.setValue(0);
+      taskOverlayScale.setValue(1);
+      taskOverlayTilt.setValue(0);
+      setActiveTaskDrag(null);
+      taskOverlayLayoutRef.current = null;
+    },
+    [
+      clearDropTaskAnimationStartTimeout,
+      dropTaskAnimation,
+      taskOverlayOpacity,
+      taskOverlayScale,
+      taskOverlayTilt,
+    ],
   );
 
   if (selectedTask) {
@@ -1522,6 +1589,7 @@ function KanbanBoard() {
                   onColumnTaskLayoutsChange={handleColumnTaskLayoutsChange}
                   dropTaskAnimation={dropTaskAnimation}
                   onDropTaskAnimationEnd={handleDropTaskAnimationEnd}
+                  onDropTaskAnimationStart={handleDropTaskAnimationStart}
                   taskDragPreview={isDropTarget ? taskDragPreview : null}
                   draggingTaskId={hiddenDraggingTaskId}
                   isTaskDragActive={activeTaskDrag !== null}
