@@ -63,16 +63,21 @@ function MagneticTaskItem({
   const itemRef = useRef<View | null>(null);
   const [magnetX] = useState(() => new Animated.Value(0));
   const [magnetY] = useState(() => new Animated.Value(0));
-  const previousLayoutRef = useRef<{ y: number; height: number } | null>(null);
+  const previousLayoutRef = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const consumedDropAnimationRef = useRef<number | null>(null);
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => {
-      const { y, height } = event.nativeEvent.layout;
+      const { x, y, width, height } = event.nativeEvent.layout;
       const previousLayout = previousLayoutRef.current;
 
       onTaskLayout(task, event);
-      previousLayoutRef.current = { y, height };
+      previousLayoutRef.current = { x, y, width, height };
 
       if (
         dropAnimation &&
@@ -116,18 +121,25 @@ function MagneticTaskItem({
         return;
       }
 
+      const deltaX = previousLayout.x - x;
       const deltaY = previousLayout.y - y;
 
-      if (Math.abs(deltaY) < 1) return;
+      if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
 
       magnetX.stopAnimation();
       magnetY.stopAnimation();
-      magnetX.setValue(0);
+      magnetX.setValue(deltaX);
       magnetY.setValue(deltaY);
-      Animated.spring(magnetY, {
-        ...MAGNETIC_CARD_SPRING,
-        toValue: 0,
-      }).start();
+      Animated.parallel([
+        Animated.spring(magnetX, {
+          ...MAGNETIC_CARD_SPRING,
+          toValue: 0,
+        }),
+        Animated.spring(magnetY, {
+          ...MAGNETIC_CARD_SPRING,
+          toValue: 0,
+        }),
+      ]).start();
     },
     [
       dropAnimation,
