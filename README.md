@@ -11,7 +11,7 @@ rearrange work with drag-and-drop interactions.
 ## APK Download
 
 Download the Android APK from Expo:
-https://expo.dev/accounts/lendrw/projects/kanban/builds/920de48f-7c63-4e50-89aa-544774e038ce
+https://expo.dev/accounts/lendrw/projects/kanban/builds/011ba83e-ad30-4524-970d-5100fa5005fa
 
 ## Features
 
