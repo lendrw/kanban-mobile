@@ -22,6 +22,11 @@
     "updates": {
       "url": "https://u.expo.dev/7062312b-6aa3-49c9-9252-5ecf9d2f73f3"
     },
-    "ios": {}
+    "ios": {
+      "bundleIdentifier": "com.lendrw.kanban",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
   }
 }
